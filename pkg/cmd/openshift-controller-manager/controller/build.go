@@ -16,25 +16,16 @@ func RunBuildController(ctx ControllerContext) (bool, error) {
 	imageTemplate.Format = ctx.OpenshiftControllerConfig.Build.ImageTemplateFormat.Format
 	imageTemplate.Latest = ctx.OpenshiftControllerConfig.Build.ImageTemplateFormat.Latest
 
-	buildDefaults, err := builddefaults.NewBuildDefaults(ctx.OpenshiftControllerConfig.Build.AdmissionPluginConfig)
-	if err != nil {
-		return true, err
-	}
-	buildOverrides, err := buildoverrides.NewBuildOverrides(ctx.OpenshiftControllerConfig.Build.AdmissionPluginConfig)
-	if err != nil {
-		return true, err
-	}
-
 	kubeClient := ctx.ClientBuilder.KubeInternalClientOrDie(bootstrappolicy.InfraBuildControllerServiceAccountName)
 	buildClient := ctx.ClientBuilder.OpenshiftInternalBuildClientOrDie(bootstrappolicy.InfraBuildControllerServiceAccountName)
 	externalKubeClient := ctx.ClientBuilder.ClientOrDie(bootstrappolicy.InfraBuildControllerServiceAccountName)
 	securityClient := ctx.ClientBuilder.OpenshiftInternalSecurityClientOrDie(bootstrappolicy.InfraBuildControllerServiceAccountName)
 
-	buildInformer := ctx.BuildInformers.Build().InternalVersion().Builds()
-	buildConfigInformer := ctx.BuildInformers.Build().InternalVersion().BuildConfigs()
-	imageStreamInformer := ctx.ImageInformers.Image().InternalVersion().ImageStreams()
-	podInformer := ctx.ExternalKubeInformers.Core().V1().Pods()
-	secretInformer := ctx.ExternalKubeInformers.Core().V1().Secrets()
+	buildInformer := ctx.InternalBuildInformers.Build().InternalVersion().Builds()
+	buildConfigInformer := ctx.InternalBuildInformers.Build().InternalVersion().BuildConfigs()
+	imageStreamInformer := ctx.InternalImageInformers.Image().InternalVersion().ImageStreams()
+	podInformer := ctx.KubernetesInformers.Core().V1().Pods()
+	secretInformer := ctx.KubernetesInformers.Core().V1().Secrets()
 
 	buildControllerParams := &buildcontroller.BuildControllerParams{
 		BuildInformer:       buildInformer,
@@ -53,8 +44,8 @@ func RunBuildController(ctx ControllerContext) (bool, error) {
 			SecurityClient: securityClient.Security(),
 		},
 		CustomBuildStrategy: &buildstrategy.CustomBuildStrategy{},
-		BuildDefaults:       buildDefaults,
-		BuildOverrides:      buildOverrides,
+		BuildDefaults:       builddefaults.BuildDefaults{Config: ctx.OpenshiftControllerConfig.Build.BuildDefaults},
+		BuildOverrides:      buildoverrides.BuildOverrides{Config: ctx.OpenshiftControllerConfig.Build.BuildOverrides},
 	}
 
 	go buildcontroller.NewBuildController(buildControllerParams).Run(5, ctx.Stop)
@@ -65,8 +56,8 @@ func RunBuildConfigChangeController(ctx ControllerContext) (bool, error) {
 	clientName := bootstrappolicy.InfraBuildConfigChangeControllerServiceAccountName
 	kubeExternalClient := ctx.ClientBuilder.ClientOrDie(clientName)
 	buildClient := ctx.ClientBuilder.OpenshiftInternalBuildClientOrDie(clientName)
-	buildConfigInformer := ctx.BuildInformers.Build().InternalVersion().BuildConfigs()
-	buildInformer := ctx.BuildInformers.Build().InternalVersion().Builds()
+	buildConfigInformer := ctx.InternalBuildInformers.Build().InternalVersion().BuildConfigs()
+	buildInformer := ctx.InternalBuildInformers.Build().InternalVersion().Builds()
 
 	controller := buildconfigcontroller.NewBuildConfigController(buildClient, kubeExternalClient, buildConfigInformer, buildInformer)
 	go controller.Run(5, ctx.Stop)

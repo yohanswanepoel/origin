@@ -31,9 +31,6 @@ import (
 	"github.com/openshift/origin/pkg/oc/clusterup/docker/dockerhelper"
 	"github.com/openshift/origin/pkg/oc/clusterup/docker/host"
 	"github.com/openshift/origin/pkg/oc/clusterup/manifests"
-
-	// install our apis into the legacy scheme
-	_ "github.com/openshift/origin/pkg/api/install"
 )
 
 type staticInstall struct {
@@ -87,6 +84,16 @@ var (
 				Namespace:       "kube-dns",
 				NamespaceObj:    newNamespaceBytes("kube-dns", runlevelOneLabel),
 				InstallTemplate: manifests.MustAsset("install/kube-dns/install.yaml"),
+			},
+		},
+		{
+			ComponentImage: "service-serving-cert-signer",
+			Template: componentinstall.Template{
+				Name:            "openshift-service-cert-signer-operator",
+				Namespace:       "openshift-core-operators",
+				NamespaceObj:    newNamespaceBytes("openshift-core-operators", runlevelOneLabel),
+				RBACTemplate:    manifests.MustAsset("install/openshift-service-cert-signer-operator/install-rbac.yaml"),
+				InstallTemplate: manifests.MustAsset("install/openshift-service-cert-signer-operator/install.yaml"),
 			},
 		},
 	}
@@ -500,6 +507,7 @@ func (c *ClusterUpConfig) startKubelet(out io.Writer, masterConfigDir, nodeConfi
 		actualKubeletFlags = append(actualKubeletFlags, curr)
 	}
 	container.Args = append(actualKubeletFlags, "--pod-manifest-path=/var/lib/origin/pod-manifests")
+	container.Args = append(container.Args, "--file-check-frequency=1s")
 	container.Args = append(container.Args, "--cluster-dns=172.30.0.2")
 	container.Args = append(container.Args, fmt.Sprintf("--v=%d", c.ServerLogLevel))
 	glog.V(1).Info(strings.Join(container.Args, " "))

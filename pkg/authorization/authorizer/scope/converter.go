@@ -17,6 +17,7 @@ import (
 	authorizerrbac "k8s.io/kubernetes/plugin/pkg/auth/authorizer/rbac"
 
 	oauthapi "github.com/openshift/api/oauth/v1"
+	"github.com/openshift/origin/pkg/api/legacy"
 	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 	imageapi "github.com/openshift/origin/pkg/image/apis/image"
 	projectapi "github.com/openshift/origin/pkg/project/apis/project"
@@ -197,7 +198,7 @@ func (userEvaluator) ResolveRules(scope, namespace string, _ rbaclisters.Cluster
 	case UserInfo:
 		return []rbacv1.PolicyRule{
 			rbacv1helpers.NewRule("get").
-				Groups(userapi.GroupName, userapi.LegacyGroupName).
+				Groups(userapi.GroupName, legacy.GroupName).
 				Resources("users").
 				Names("~").
 				RuleOrDie(),
@@ -209,21 +210,21 @@ func (userEvaluator) ResolveRules(scope, namespace string, _ rbaclisters.Cluster
 				Resources("selfsubjectaccessreviews").
 				RuleOrDie(),
 			rbacv1helpers.NewRule("create").
-				Groups(authorizationapi.GroupName, authorizationapi.LegacyGroupName).
+				Groups(authorizationapi.GroupName, legacy.GroupName).
 				Resources("selfsubjectrulesreviews").
 				RuleOrDie(),
 		}, nil
 	case UserListScopedProjects:
 		return []rbacv1.PolicyRule{
 			rbacv1helpers.NewRule("list", "watch").
-				Groups(projectapi.GroupName, projectapi.LegacyGroupName).
+				Groups(projectapi.GroupName, legacy.GroupName).
 				Resources("projects").
 				RuleOrDie(),
 		}, nil
 	case UserListAllProjects:
 		return []rbacv1.PolicyRule{
 			rbacv1helpers.NewRule("list", "watch").
-				Groups(projectapi.GroupName, projectapi.LegacyGroupName).
+				Groups(projectapi.GroupName, legacy.GroupName).
 				Resources("projects").
 				RuleOrDie(),
 			rbacv1helpers.NewRule("get").
@@ -260,25 +261,25 @@ var escalatingScopeResources = []schema.GroupResource{
 	{Group: kapi.GroupName, Resource: "secrets"},
 
 	{Group: imageapi.GroupName, Resource: "imagestreams/secrets"},
-	{Group: imageapi.LegacyGroupName, Resource: "imagestreams/secrets"},
+	{Group: legacy.GroupName, Resource: "imagestreams/secrets"},
 
 	{Group: oauthapi.GroupName, Resource: "oauthauthorizetokens"},
-	{Group: oauthapi.LegacyGroupName, Resource: "oauthauthorizetokens"},
+	{Group: legacy.GroupName, Resource: "oauthauthorizetokens"},
 
 	{Group: oauthapi.GroupName, Resource: "oauthaccesstokens"},
-	{Group: oauthapi.LegacyGroupName, Resource: "oauthaccesstokens"},
+	{Group: legacy.GroupName, Resource: "oauthaccesstokens"},
 
 	{Group: authorizationapi.GroupName, Resource: "roles"},
-	{Group: authorizationapi.LegacyGroupName, Resource: "roles"},
+	{Group: legacy.GroupName, Resource: "roles"},
 
 	{Group: authorizationapi.GroupName, Resource: "rolebindings"},
-	{Group: authorizationapi.LegacyGroupName, Resource: "rolebindings"},
+	{Group: legacy.GroupName, Resource: "rolebindings"},
 
 	{Group: authorizationapi.GroupName, Resource: "clusterroles"},
-	{Group: authorizationapi.LegacyGroupName, Resource: "clusterroles"},
+	{Group: legacy.GroupName, Resource: "clusterroles"},
 
 	{Group: authorizationapi.GroupName, Resource: "clusterrolebindings"},
-	{Group: authorizationapi.LegacyGroupName, Resource: "clusterrolebindings"},
+	{Group: legacy.GroupName, Resource: "clusterrolebindings"},
 }
 
 // role:<clusterrole name>:<namespace to allow the cluster role, * means all>

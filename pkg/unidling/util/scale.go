@@ -3,7 +3,7 @@ package util
 import (
 	"github.com/golang/glog"
 
-	kapiv1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	kextapi "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -11,12 +11,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	kextensionsclient "k8s.io/client-go/kubernetes/typed/extensions/v1beta1"
 	kapi "k8s.io/kubernetes/pkg/apis/core"
-	kcoreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
 
-	appsapiv1 "github.com/openshift/api/apps/v1"
-	appsapi "github.com/openshift/origin/pkg/apps/apis/apps"
-	appsclient "github.com/openshift/origin/pkg/apps/generated/internalclientset/typed/apps/internalversion"
+	appsv1 "github.com/openshift/api/apps/v1"
+	appsclient "github.com/openshift/client-go/apps/clientset/versioned/typed/apps/v1"
+	"github.com/openshift/origin/pkg/api/legacy"
 	unidlingapi "github.com/openshift/origin/pkg/unidling/api"
+	kcoreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
 )
 
 // TODO: remove the below functions once we get a way to mark/unmark an object as idled
@@ -74,7 +74,7 @@ func (s scaleUpdater) Update(annotator *ScaleAnnotater, obj runtime.Object, scal
 	}
 
 	switch typedObj := obj.(type) {
-	case *appsapi.DeploymentConfig:
+	case *appsv1.DeploymentConfig:
 		if typedObj.Annotations == nil {
 			typedObj.Annotations = make(map[string]string)
 		}
@@ -87,7 +87,7 @@ func (s scaleUpdater) Update(annotator *ScaleAnnotater, obj runtime.Object, scal
 			return err
 		}
 
-		patchBytes, err = strategicpatch.CreateTwoWayMergePatch(originalObj, newObj, &appsapiv1.DeploymentConfig{})
+		patchBytes, err = strategicpatch.CreateTwoWayMergePatch(originalObj, newObj, &appsv1.DeploymentConfig{})
 		if err != nil {
 			return err
 		}
@@ -106,7 +106,7 @@ func (s scaleUpdater) Update(annotator *ScaleAnnotater, obj runtime.Object, scal
 			return err
 		}
 
-		patchBytes, err = strategicpatch.CreateTwoWayMergePatch(originalObj, newObj, &kapiv1.ReplicationController{})
+		patchBytes, err = strategicpatch.CreateTwoWayMergePatch(originalObj, newObj, &corev1.ReplicationController{})
 		if err != nil {
 			return err
 		}
@@ -124,8 +124,8 @@ func (c *ScaleAnnotater) GetObjectWithScale(namespace string, ref unidlingapi.Cr
 	var scale *kextapi.Scale
 
 	switch {
-	case ref.Kind == "DeploymentConfig" && (ref.Group == appsapi.GroupName || ref.Group == appsapi.LegacyGroupName):
-		var dc *appsapi.DeploymentConfig
+	case ref.Kind == "DeploymentConfig" && (ref.Group == appsv1.GroupName || ref.Group == legacy.GroupName):
+		var dc *appsv1.DeploymentConfig
 		dc, err = c.dcs.DeploymentConfigs(namespace).Get(ref.Name, metav1.GetOptions{})
 		if err != nil {
 			return nil, nil, err
@@ -166,7 +166,7 @@ func (c *ScaleAnnotater) UpdateObjectScale(updater ScaleUpdater, namespace strin
 	}
 
 	switch obj.(type) {
-	case *appsapi.DeploymentConfig, *kapi.ReplicationController:
+	case *appsv1.DeploymentConfig, *kapi.ReplicationController:
 		return updater.Update(c, obj, scale)
 	default:
 		glog.V(2).Infof("Unidling unknown type %t: using scale interface and not removing annotations", obj)

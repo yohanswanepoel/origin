@@ -42,14 +42,14 @@ import (
 	imagefake "github.com/openshift/origin/pkg/image/generated/internalclientset/fake"
 	imageinternalversion "github.com/openshift/origin/pkg/image/generated/internalclientset/typed/image/internalversion"
 	dockerregistry "github.com/openshift/origin/pkg/image/importer/dockerv1client"
-	clicmd "github.com/openshift/origin/pkg/oc/cli/cmd"
-	"github.com/openshift/origin/pkg/oc/generate"
-	"github.com/openshift/origin/pkg/oc/generate/app"
-	apptest "github.com/openshift/origin/pkg/oc/generate/app/test"
-	"github.com/openshift/origin/pkg/oc/generate/cmd"
-	"github.com/openshift/origin/pkg/oc/generate/dockerfile"
-	"github.com/openshift/origin/pkg/oc/generate/jenkinsfile"
-	"github.com/openshift/origin/pkg/oc/generate/source"
+	"github.com/openshift/origin/pkg/oc/cli/newapp"
+	"github.com/openshift/origin/pkg/oc/lib/newapp"
+	"github.com/openshift/origin/pkg/oc/lib/newapp/app"
+	apptest "github.com/openshift/origin/pkg/oc/lib/newapp/app/test"
+	"github.com/openshift/origin/pkg/oc/lib/newapp/cmd"
+	"github.com/openshift/origin/pkg/oc/lib/newapp/dockerfile"
+	"github.com/openshift/origin/pkg/oc/lib/newapp/jenkinsfile"
+	"github.com/openshift/origin/pkg/oc/lib/newapp/source"
 	routefake "github.com/openshift/origin/pkg/route/generated/internalclientset/fake"
 	templateapi "github.com/openshift/origin/pkg/template/apis/template"
 	templatefake "github.com/openshift/origin/pkg/template/generated/internalclientset/fake"
@@ -1188,7 +1188,7 @@ func TestNewAppRunBuilds(t *testing.T) {
 				ComponentInputs: cmd.ComponentInputs{
 					SourceRepositories: []string{
 						"https://github.com/openshift/ruby-hello-world",
-						"https://github.com/openshift/django-ex",
+						"https://github.com/sclorg/django-ex",
 					},
 				},
 				GenerationInputs: cmd.GenerationInputs{
@@ -1321,7 +1321,7 @@ func TestNewAppRunBuilds(t *testing.T) {
 			config: &cmd.AppConfig{
 				ComponentInputs: cmd.ComponentInputs{
 					SourceRepositories: []string{
-						"https://github.com/openshift/nodejs-ex",
+						"https://github.com/sclorg/nodejs-ex",
 					},
 				},
 				GenerationInputs: cmd.GenerationInputs{
@@ -1344,8 +1344,9 @@ func TestNewAppRunBuilds(t *testing.T) {
 				}
 				if !reflect.DeepEqual(bc.Spec.Source, buildapi.BuildSource{
 					ContextDir: "openshift/pipeline",
-					Git:        &buildapi.GitBuildSource{URI: "https://github.com/openshift/nodejs-ex"},
+					Git:        &buildapi.GitBuildSource{URI: "https://github.com/sclorg/nodejs-ex"},
 					Secrets:    []buildapi.SecretBuildSource{},
+					ConfigMaps: []buildapi.ConfigMapBuildSource{},
 				}) {
 					return fmt.Errorf("invalid bc.Spec.Source, got %#v", bc.Spec.Source)
 				}
@@ -1360,7 +1361,7 @@ func TestNewAppRunBuilds(t *testing.T) {
 			config: &cmd.AppConfig{
 				ComponentInputs: cmd.ComponentInputs{
 					Components: []string{
-						"centos/nodejs-4-centos7~https://github.com/openshift/nodejs-ex",
+						"centos/nodejs-4-centos7~https://github.com/sclorg/nodejs-ex",
 					},
 				},
 				GenerationInputs: cmd.GenerationInputs{
@@ -1384,8 +1385,9 @@ func TestNewAppRunBuilds(t *testing.T) {
 				}
 				if !reflect.DeepEqual(bc.Spec.Source, buildapi.BuildSource{
 					ContextDir: "openshift/pipeline",
-					Git:        &buildapi.GitBuildSource{URI: "https://github.com/openshift/nodejs-ex"},
+					Git:        &buildapi.GitBuildSource{URI: "https://github.com/sclorg/nodejs-ex"},
 					Secrets:    []buildapi.SecretBuildSource{},
+					ConfigMaps: []buildapi.ConfigMapBuildSource{},
 				}) {
 					return fmt.Errorf("invalid bc.Spec.Source, got %#v", bc.Spec.Source.Git)
 				}
@@ -1400,7 +1402,7 @@ func TestNewAppRunBuilds(t *testing.T) {
 			config: &cmd.AppConfig{
 				ComponentInputs: cmd.ComponentInputs{
 					SourceRepositories: []string{
-						"https://github.com/openshift/nodejs-ex",
+						"https://github.com/sclorg/nodejs-ex",
 					},
 				},
 				GenerationInputs: cmd.GenerationInputs{
@@ -1417,7 +1419,7 @@ func TestNewAppRunBuilds(t *testing.T) {
 			config: &cmd.AppConfig{
 				ComponentInputs: cmd.ComponentInputs{
 					SourceRepositories: []string{
-						"https://github.com/openshift/nodejs-ex",
+						"https://github.com/sclorg/nodejs-ex",
 					},
 				},
 				GenerationInputs: cmd.GenerationInputs{
@@ -1434,7 +1436,7 @@ func TestNewAppRunBuilds(t *testing.T) {
 			config: &cmd.AppConfig{
 				ComponentInputs: cmd.ComponentInputs{
 					SourceRepositories: []string{
-						"https://github.com/openshift/nodejs-ex",
+						"https://github.com/sclorg/nodejs-ex",
 					},
 				},
 				GenerationInputs: cmd.GenerationInputs{
@@ -1817,11 +1819,12 @@ func TestNewAppBuildConfigEnvVarsAndSecrets(t *testing.T) {
 	okRouteClient := &routefake.Clientset{}
 
 	tests := []struct {
-		name            string
-		config          *cmd.AppConfig
-		expected        []kapi.EnvVar
-		expectedSecrets map[string]string
-		expectedErr     error
+		name               string
+		config             *cmd.AppConfig
+		expected           []kapi.EnvVar
+		expectedSecrets    map[string]string
+		expectedConfigMaps map[string]string
+		expectedErr        error
 	}{
 		{
 			name: "explicit environment variables for buildConfig and deploymentConfig",
@@ -1834,6 +1837,7 @@ func TestNewAppBuildConfigEnvVarsAndSecrets(t *testing.T) {
 					OutputDocker: true,
 					Environment:  []string{"BUILD_ENV_1=env_value_1", "BUILD_ENV_2=env_value_2"},
 					Secrets:      []string{"foo:/var", "bar"},
+					ConfigMaps:   []string{"this:/tmp", "that"},
 				},
 
 				Resolvers: cmd.Resolvers{
@@ -1850,9 +1854,10 @@ func TestNewAppBuildConfigEnvVarsAndSecrets(t *testing.T) {
 				RouteClient:     okRouteClient.Route(),
 				OriginNamespace: "default",
 			},
-			expected:        []kapi.EnvVar{},
-			expectedSecrets: map[string]string{"foo": "/var", "bar": "."},
-			expectedErr:     nil,
+			expected:           []kapi.EnvVar{},
+			expectedSecrets:    map[string]string{"foo": "/var", "bar": "."},
+			expectedConfigMaps: map[string]string{"this": "/tmp", "that": "."},
+			expectedErr:        nil,
 		},
 	}
 
@@ -1866,11 +1871,13 @@ func TestNewAppBuildConfigEnvVarsAndSecrets(t *testing.T) {
 		}
 		got := []kapi.EnvVar{}
 		gotSecrets := []buildapi.SecretBuildSource{}
+		gotConfigMaps := []buildapi.ConfigMapBuildSource{}
 		for _, obj := range res.List.Items {
 			switch tp := obj.(type) {
 			case *buildapi.BuildConfig:
 				got = tp.Spec.Strategy.SourceStrategy.Env
 				gotSecrets = tp.Spec.Source.Secrets
+				gotConfigMaps = tp.Spec.Source.ConfigMaps
 				break
 			}
 		}
@@ -1885,6 +1892,20 @@ func TestNewAppBuildConfigEnvVarsAndSecrets(t *testing.T) {
 			}
 			if !found {
 				t.Errorf("expected secret %q and destination %q, got %#v", secretName, destDir, gotSecrets)
+				continue
+			}
+		}
+
+		for configName, destDir := range test.expectedConfigMaps {
+			found := false
+			for _, got := range gotConfigMaps {
+				if got.ConfigMap.Name == configName && got.DestinationDir == destDir {
+					found = true
+					continue
+				}
+			}
+			if !found {
+				t.Errorf("expected configMap %q and destination %q, got %#v", configName, destDir, gotConfigMaps)
 				continue
 			}
 		}
@@ -1963,13 +1984,13 @@ func TestNewAppSourceAuthRequired(t *testing.T) {
 func TestNewAppListAndSearch(t *testing.T) {
 	tests := []struct {
 		name           string
-		options        clicmd.NewAppOptions
+		options        newapp.AppOptions
 		expectedOutput string
 	}{
 		{
 			name: "search, no oldversion",
-			options: clicmd.NewAppOptions{
-				ObjectGeneratorOptions: &clicmd.ObjectGeneratorOptions{
+			options: newapp.AppOptions{
+				ObjectGeneratorOptions: &newapp.ObjectGeneratorOptions{
 					Config: &cmd.AppConfig{
 						ComponentInputs: cmd.ComponentInputs{
 							ImageStreams: []string{"ruby"},
@@ -1981,8 +2002,8 @@ func TestNewAppListAndSearch(t *testing.T) {
 		},
 		{
 			name: "list, no oldversion",
-			options: clicmd.NewAppOptions{
-				ObjectGeneratorOptions: &clicmd.ObjectGeneratorOptions{
+			options: newapp.AppOptions{
+				ObjectGeneratorOptions: &newapp.ObjectGeneratorOptions{
 					Config: &cmd.AppConfig{
 						AsList: true,
 					}},

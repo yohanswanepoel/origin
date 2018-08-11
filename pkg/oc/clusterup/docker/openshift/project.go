@@ -8,9 +8,10 @@ import (
 	kclientcmd "k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
 
-	"github.com/openshift/origin/pkg/oc/cli/cmd"
-	"github.com/openshift/origin/pkg/oc/cli/config"
-	projectclientinternal "github.com/openshift/origin/pkg/project/generated/internalclientset"
+	projectv1client "github.com/openshift/client-go/project/clientset/versioned/typed/project/v1"
+	ocproject "github.com/openshift/origin/pkg/oc/cli/project"
+	ocrequestproject "github.com/openshift/origin/pkg/oc/cli/requestproject"
+	"github.com/openshift/origin/pkg/oc/lib/kubeconfig"
 )
 
 // createProject creates a project
@@ -19,24 +20,24 @@ func CreateProject(f genericclioptions.RESTClientGetter, name, display, desc, ba
 	if err != nil {
 		return err
 	}
-	projectClient, err := projectclientinternal.NewForConfig(clientConfig)
+	projectClient, err := projectv1client.NewForConfig(clientConfig)
 	if err != nil {
 		return err
 	}
-	pathOptions := config.NewPathOptionsWithConfig("")
-	opt := &cmd.NewProjectOptions{
+	pathOptions := kubeconfig.NewPathOptionsWithConfig("")
+	opt := &ocrequestproject.RequestProjectOptions{
 		ProjectName: name,
 		DisplayName: display,
 		Description: desc,
 
 		Name: basecmd,
 
-		Client: projectClient.Project(),
+		Client: projectClient,
 
-		ProjectOptions: &cmd.ProjectOptions{PathOptions: pathOptions},
-		Out:            ioutil.Discard,
+		ProjectOptions: &ocproject.ProjectOptions{PathOptions: pathOptions},
+		IOStreams:      genericclioptions.NewTestIOStreamsDiscard(),
 	}
-	err = opt.ProjectOptions.Complete(f, []string{}, ioutil.Discard)
+	err = opt.ProjectOptions.Complete(f, []string{})
 	if err != nil {
 		return err
 	}
@@ -51,10 +52,10 @@ func CreateProject(f genericclioptions.RESTClientGetter, name, display, desc, ba
 }
 
 func setCurrentProject(f genericclioptions.RESTClientGetter, name string, out io.Writer) error {
-	pathOptions := config.NewPathOptionsWithConfig("")
-	opt := &cmd.ProjectOptions{PathOptions: pathOptions}
-	opt.Complete(f, []string{name}, out)
-	return opt.RunProject()
+	pathOptions := kubeconfig.NewPathOptionsWithConfig("")
+	opt := &ocproject.ProjectOptions{PathOptions: pathOptions, IOStreams: genericclioptions.IOStreams{Out: out, ErrOut: ioutil.Discard}}
+	opt.Complete(f, []string{name})
+	return opt.Run()
 }
 
 func LoggedInUserFactory() (genericclioptions.RESTClientGetter, error) {

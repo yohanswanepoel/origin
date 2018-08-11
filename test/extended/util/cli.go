@@ -29,13 +29,13 @@ import (
 	kinternalclientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 
+	appsclient "github.com/openshift/client-go/apps/clientset/versioned"
 	_ "github.com/openshift/origin/pkg/api/install"
-	appsclientset "github.com/openshift/origin/pkg/apps/generated/internalclientset"
 	authorizationclientset "github.com/openshift/origin/pkg/authorization/generated/internalclientset"
 	buildclientset "github.com/openshift/origin/pkg/build/generated/internalclientset"
 	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
 	imageclientset "github.com/openshift/origin/pkg/image/generated/internalclientset"
-	"github.com/openshift/origin/pkg/oc/cli/config"
+	"github.com/openshift/origin/pkg/oc/lib/kubeconfig"
 	projectapi "github.com/openshift/origin/pkg/project/apis/project"
 	projectclientset "github.com/openshift/origin/pkg/project/generated/internalclientset"
 	routeclientset "github.com/openshift/origin/pkg/route/generated/internalclientset"
@@ -71,7 +71,7 @@ type CLI struct {
 func NewCLI(project, adminConfigPath string) *CLI {
 	client := &CLI{}
 
-	// has to run before the default framework nukes the client
+	// must be registered before the e2e framework aftereach
 	g.AfterEach(client.TeardownProject)
 
 	client.kubeFramework = e2e.NewDefaultFramework(project)
@@ -86,6 +86,28 @@ func NewCLI(project, adminConfigPath string) *CLI {
 	g.BeforeEach(client.SetupProject)
 
 	return client
+}
+
+// ProwGCPSetup makes sure certain required env vars are available in the case
+// that extended tests are invoked directly via calls to ginkgo/extended.test
+func ProwGCPSetup(oc *CLI) {
+	tn := os.Getenv("OS_TEST_NAMESPACE")
+	ad := os.Getenv("ARTIFACT_DIR")
+	btd := os.Getenv("BASETMPDIR")
+	e2e.Logf("OS_TEST_NAMESPACE env setting %s, ARTIFACT_DIR env setting %s BASETMPDIR %s", tn, ad, btd)
+	if len(strings.TrimSpace(tn)) == 0 {
+		os.Setenv("OS_TEST_NAMESPACE", oc.Namespace())
+		e2e.Logf("OS_TEST_NAMESPACE env setting now %s", os.Getenv("OS_TEST_NAMESPACE"))
+	}
+	if len(strings.TrimSpace(ad)) == 0 {
+		os.Setenv("ARTIFACT_DIR", "/tmp/artifacts")
+		e2e.Logf("ARTIFACT_DIR env setting now %s", os.Getenv("ARTIFACT_DIR"))
+	}
+	if len(strings.TrimSpace(btd)) == 0 {
+		os.Setenv("BASETMPDIR", "/tmp/shared")
+		e2e.Logf("BASETMPDIR setting is now %s", os.Getenv("BASETMPDIR"))
+	}
+
 }
 
 // KubeFramework returns Kubernetes framework which contains helper functions
@@ -118,7 +140,7 @@ func (c *CLI) ChangeUser(name string) *CLI {
 		FatalErr(err)
 	}
 
-	kubeConfig, err := config.CreateConfig(c.Namespace(), clientConfig)
+	kubeConfig, err := kubeconfig.CreateConfig(c.Namespace(), clientConfig)
 	if err != nil {
 		FatalErr(err)
 	}
@@ -160,6 +182,7 @@ func (c *CLI) SetupProject() {
 	newNamespace := names.SimpleNameGenerator.GenerateName(fmt.Sprintf("e2e-test-%s-", c.kubeFramework.BaseName))
 	c.SetNamespace(newNamespace).ChangeUser(fmt.Sprintf("%s-user", newNamespace))
 	e2e.Logf("The user is now %q", c.Username())
+	ProwGCPSetup(c)
 
 	e2e.Logf("Creating project %q", newNamespace)
 	_, err := c.ProjectClient().Project().ProjectRequests().Create(&projectapi.ProjectRequest{
@@ -182,12 +205,42 @@ func (c *CLI) SetupProject() {
 	o.Expect(err).NotTo(o.HaveOccurred())
 }
 
+// SetupProject creates a new project and assign a random user to the project.
+// All resources will be then created within this project.
+func (c *CLI) CreateProject() string {
+	newNamespace := names.SimpleNameGenerator.GenerateName(fmt.Sprintf("e2e-test-%s-", c.kubeFramework.BaseName))
+	e2e.Logf("Creating project %q", newNamespace)
+	_, err := c.ProjectClient().Project().ProjectRequests().Create(&projectapi.ProjectRequest{
+		ObjectMeta: metav1.ObjectMeta{Name: newNamespace},
+	})
+	o.Expect(err).NotTo(o.HaveOccurred())
+
+	// TODO: remove when https://github.com/kubernetes/kubernetes/pull/62606 merges and is in origin
+	c.namespacesToDelete = append(c.namespacesToDelete, newNamespace)
+
+	e2e.Logf("Waiting on permissions in project %q ...", newNamespace)
+	err = WaitForSelfSAR(1*time.Second, 60*time.Second, c.KubeClient(), authorizationapiv1.SelfSubjectAccessReviewSpec{
+		ResourceAttributes: &authorizationapiv1.ResourceAttributes{
+			Namespace: newNamespace,
+			Verb:      "create",
+			Group:     "",
+			Resource:  "pods",
+		},
+	})
+	o.Expect(err).NotTo(o.HaveOccurred())
+	return newNamespace
+}
+
 // TeardownProject removes projects created by this test.
 func (c *CLI) TeardownProject() {
+	if g.CurrentGinkgoTestDescription().Failed && e2e.TestContext.DumpLogsOnFailure {
+		e2e.DumpAllNamespaceInfo(c.kubeFramework.ClientSet, c.Namespace())
+	}
+
 	if len(c.configPath) > 0 {
 		os.Remove(c.configPath)
 	}
-	if len(c.namespacesToDelete) > 0 {
+	if e2e.TestContext.DeleteNamespace && len(c.namespacesToDelete) > 0 {
 		timeout := e2e.DefaultNamespaceDeletionTimeout
 		if c.kubeFramework.NamespaceDeletionTimeout != 0 {
 			timeout = c.kubeFramework.NamespaceDeletionTimeout
@@ -209,12 +262,8 @@ func (c *CLI) RESTMapper() meta.RESTMapper {
 	return ret
 }
 
-func (c *CLI) AppsClient() appsclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.configPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := appsclientset.NewForConfig(clientConfig)
+func (c *CLI) AppsClient() appsclient.Interface {
+	client, err := appsclient.NewForConfig(c.UserConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -222,11 +271,7 @@ func (c *CLI) AppsClient() appsclientset.Interface {
 }
 
 func (c *CLI) AuthorizationClient() authorizationclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.configPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := authorizationclientset.NewForConfig(clientConfig)
+	client, err := authorizationclientset.NewForConfig(c.UserConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -234,11 +279,7 @@ func (c *CLI) AuthorizationClient() authorizationclientset.Interface {
 }
 
 func (c *CLI) BuildClient() buildclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.configPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := buildclientset.NewForConfig(clientConfig)
+	client, err := buildclientset.NewForConfig(c.UserConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -246,11 +287,7 @@ func (c *CLI) BuildClient() buildclientset.Interface {
 }
 
 func (c *CLI) ImageClient() imageclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.configPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := imageclientset.NewForConfig(clientConfig)
+	client, err := imageclientset.NewForConfig(c.UserConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -258,11 +295,7 @@ func (c *CLI) ImageClient() imageclientset.Interface {
 }
 
 func (c *CLI) ProjectClient() projectclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.configPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := projectclientset.NewForConfig(clientConfig)
+	client, err := projectclientset.NewForConfig(c.UserConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -270,11 +303,7 @@ func (c *CLI) ProjectClient() projectclientset.Interface {
 }
 
 func (c *CLI) RouteClient() routeclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.configPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := routeclientset.NewForConfig(clientConfig)
+	client, err := routeclientset.NewForConfig(c.UserConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -284,11 +313,7 @@ func (c *CLI) RouteClient() routeclientset.Interface {
 // Client provides an OpenShift client for the current user. If the user is not
 // set, then it provides client for the cluster admin user
 func (c *CLI) TemplateClient() templateclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.configPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := templateclientset.NewForConfig(clientConfig)
+	client, err := templateclientset.NewForConfig(c.UserConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -296,23 +321,15 @@ func (c *CLI) TemplateClient() templateclientset.Interface {
 }
 
 func (c *CLI) UserClient() userclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.configPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := userclientset.NewForConfig(clientConfig)
+	client, err := userclientset.NewForConfig(c.UserConfig())
 	if err != nil {
 		FatalErr(err)
 	}
 	return client
 }
 
-func (c *CLI) AdminAppsClient() appsclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.adminConfigPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := appsclientset.NewForConfig(clientConfig)
+func (c *CLI) AdminAppsClient() appsclient.Interface {
+	client, err := appsclient.NewForConfig(c.AdminConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -320,11 +337,7 @@ func (c *CLI) AdminAppsClient() appsclientset.Interface {
 }
 
 func (c *CLI) AdminAuthorizationClient() authorizationclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.adminConfigPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := authorizationclientset.NewForConfig(clientConfig)
+	client, err := authorizationclientset.NewForConfig(c.AdminConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -332,11 +345,7 @@ func (c *CLI) AdminAuthorizationClient() authorizationclientset.Interface {
 }
 
 func (c *CLI) AdminBuildClient() buildclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.adminConfigPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := buildclientset.NewForConfig(clientConfig)
+	client, err := buildclientset.NewForConfig(c.AdminConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -344,11 +353,7 @@ func (c *CLI) AdminBuildClient() buildclientset.Interface {
 }
 
 func (c *CLI) AdminImageClient() imageclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.adminConfigPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := imageclientset.NewForConfig(clientConfig)
+	client, err := imageclientset.NewForConfig(c.AdminConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -356,11 +361,7 @@ func (c *CLI) AdminImageClient() imageclientset.Interface {
 }
 
 func (c *CLI) AdminProjectClient() projectclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.adminConfigPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := projectclientset.NewForConfig(clientConfig)
+	client, err := projectclientset.NewForConfig(c.AdminConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -368,11 +369,7 @@ func (c *CLI) AdminProjectClient() projectclientset.Interface {
 }
 
 func (c *CLI) AdminRouteClient() routeclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.adminConfigPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := routeclientset.NewForConfig(clientConfig)
+	client, err := routeclientset.NewForConfig(c.AdminConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -381,11 +378,7 @@ func (c *CLI) AdminRouteClient() routeclientset.Interface {
 
 // AdminClient provides an OpenShift client for the cluster admin user.
 func (c *CLI) AdminTemplateClient() templateclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.adminConfigPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := templateclientset.NewForConfig(clientConfig)
+	client, err := templateclientset.NewForConfig(c.AdminConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -393,11 +386,7 @@ func (c *CLI) AdminTemplateClient() templateclientset.Interface {
 }
 
 func (c *CLI) AdminUserClient() userclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.adminConfigPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := userclientset.NewForConfig(clientConfig)
+	client, err := userclientset.NewForConfig(c.AdminConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -405,11 +394,7 @@ func (c *CLI) AdminUserClient() userclientset.Interface {
 }
 
 func (c *CLI) AdminSecurityClient() securityclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.adminConfigPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	client, err := securityclientset.NewForConfig(clientConfig)
+	client, err := securityclientset.NewForConfig(c.AdminConfig())
 	if err != nil {
 		FatalErr(err)
 	}
@@ -418,20 +403,12 @@ func (c *CLI) AdminSecurityClient() securityclientset.Interface {
 
 // KubeClient provides a Kubernetes client for the current namespace
 func (c *CLI) KubeClient() kclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.configPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	return kclientset.NewForConfigOrDie(clientConfig)
+	return kclientset.NewForConfigOrDie(c.UserConfig())
 }
 
 // KubeClient provides a Kubernetes client for the current namespace
 func (c *CLI) InternalKubeClient() kinternalclientset.Interface {
-	clientConfig, err := configapi.GetClientConfig(c.configPath, nil)
-	if err != nil {
-		FatalErr(err)
-	}
-	return kinternalclientset.NewForConfigOrDie(clientConfig)
+	return kinternalclientset.NewForConfigOrDie(c.UserConfig())
 }
 
 // AdminKubeClient provides a Kubernetes client for the cluster admin user.
@@ -442,6 +419,14 @@ func (c *CLI) AdminKubeClient() kclientset.Interface {
 // AdminKubeClient provides a Kubernetes client for the cluster admin user.
 func (c *CLI) InternalAdminKubeClient() kinternalclientset.Interface {
 	return kinternalclientset.NewForConfigOrDie(c.AdminConfig())
+}
+
+func (c *CLI) UserConfig() *restclient.Config {
+	clientConfig, err := configapi.GetClientConfig(c.configPath, nil)
+	if err != nil {
+		FatalErr(err)
+	}
+	return clientConfig
 }
 
 func (c *CLI) AdminConfig() *restclient.Config {

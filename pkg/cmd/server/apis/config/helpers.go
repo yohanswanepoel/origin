@@ -127,6 +127,7 @@ func GetMasterFileReferences(config *MasterConfig) []*string {
 
 			case (*GitHubIdentityProvider):
 				refs = append(refs, GetStringSourceFileReferences(&provider.ClientSecret)...)
+				refs = append(refs, &provider.CA)
 
 			}
 		}
@@ -180,6 +181,8 @@ func GetMasterFileReferences(config *MasterConfig) []*string {
 
 	refs = append(refs, &config.AuditConfig.AuditFilePath)
 	refs = append(refs, &config.AuditConfig.PolicyFile)
+
+	refs = append(refs, &config.ImagePolicyConfig.AdditionalTrustedCA)
 
 	return refs
 }

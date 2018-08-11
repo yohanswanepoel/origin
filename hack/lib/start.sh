@@ -270,7 +270,7 @@ function os::start::master() {
 	os::log::debug "$( ps -ef | grep openshift )"
 
 	os::log::debug "Starting OpenShift server"
-	local openshift_env=( "OPENSHIFT_PROFILE=${OPENSHIFT_PROFILE:-web}" "OPENSHIFT_ON_PANIC=crash" )
+	local openshift_env=( "OPENSHIFT_ON_PANIC=crash" )
 	$(os::start::internal::openshift_executable) start master                                       \
 	                                             --loglevel=4                                       \
 	                                             --logspec='*importer=5'                            \
@@ -522,15 +522,11 @@ function os::start::internal::openshift_executable() {
 
 		openshift_executable="${sudo} docker run ${docker_options} ${volumes} ${envvars} openshift/origin:${version}"
 	else
-		local envvars=""
-		if [[ -n "${ENV:-}" ]]; then
-			envvars="env "
-			for envvar in "${ENV[@]}"; do
-				envvars+="${envvar} "
-			done
-		fi
-
-		openshift_executable="${sudo} ${envvars} $(which openshift)"
+		if [[ -n "${sudo}" ]]; then
+		    openshift_executable="${sudo} -E $(which openshift)"
+        else
+		    openshift_executable="$(which openshift)"
+        fi
 	fi
 
 	echo "${openshift_executable}"
@@ -613,6 +609,13 @@ function os::start::router() {
 	else
 		oc adm router --config="${ADMIN_KUBECONFIG}" --images="${USE_IMAGES}" --service-account=router
 	fi
+
+	# Note that when the haproxy config manager is set based on router type,
+	# the env entry may need to be always set or removed (if defaulted).
+	if [[ -n "${ROUTER_HAPROXY_CONFIG_MANAGER:-}" ]]; then
+		os::log::debug "Changing the router DC to enable the haproxy config manager"
+		oc set env dc/router -c router ROUTER_HAPROXY_CONFIG_MANAGER=true
+	fi
 }
 readonly -f os::start::router
 
@@ -631,7 +634,7 @@ function os::start::registry() {
 	# For testing purposes, ensure the quota objects are always up to date in the registry by
 	# disabling project cache.
 	oc adm registry --config="${ADMIN_KUBECONFIG}" --images="${USE_IMAGES}" --enforce-quota -o json | \
-		oc env --config="${ADMIN_KUBECONFIG}" -f - --output json "REGISTRY_MIDDLEWARE_REPOSITORY_OPENSHIFT_PROJECTCACHETTL=0" | \
+		oc set env --config="${ADMIN_KUBECONFIG}" --local -f - --output json "REGISTRY_MIDDLEWARE_REPOSITORY_OPENSHIFT_PROJECTCACHETTL=0" | \
 		oc create --config="${ADMIN_KUBECONFIG}" -f -
 }
 readonly -f os::start::registry

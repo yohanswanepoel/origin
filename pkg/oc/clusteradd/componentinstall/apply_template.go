@@ -8,13 +8,11 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/openshift/origin/pkg/oc/clusterup/coreinstall/kubeapiserver"
-
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/origin/pkg/oc/clusterup/docker/dockerhelper"
 	"github.com/openshift/origin/pkg/oc/clusterup/docker/run"
-	"github.com/openshift/origin/pkg/oc/errors"
+	"github.com/openshift/origin/pkg/oc/lib/errors"
 )
 
 type Template struct {
@@ -82,7 +80,7 @@ func (opt installReadyTemplate) Install(dockerClient dockerhelper.Interface) err
 
 	glog.Infof("Installing %q\n", opt.Name())
 
-	clusterAdminConfigBytes, err := ioutil.ReadFile(path.Join(opt.baseDir, kubeapiserver.KubeAPIServerDirName, "admin.kubeconfig"))
+	clusterAdminConfigBytes, err := ioutil.ReadFile(path.Join(opt.baseDir, "kube-apiserver", "admin.kubeconfig"))
 	if err != nil {
 		return err
 	}

@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
-
 	"k8s.io/apimachinery/pkg/runtime"
 
-	appsapi "github.com/openshift/origin/pkg/apps/apis/apps"
+	"github.com/davecgh/go-spew/spew"
+
+	appsv1 "github.com/openshift/api/apps/v1"
 )
 
 const legacyDC = `{
@@ -25,7 +25,7 @@ func TestLegacyDecoding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.(*appsapi.DeploymentConfig).Name != "sinatra-app-example-a" {
+	if result.(*appsv1.DeploymentConfig).Name != "sinatra-app-example-a" {
 		t.Fatal(spew.Sdump(result))
 	}
 
@@ -41,7 +41,7 @@ func TestLegacyDecoding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result2.(*appsapi.DeploymentConfig).Name != "sinatra-app-example-a" {
+	if result2.(*appsv1.DeploymentConfig).Name != "sinatra-app-example-a" {
 		t.Fatal(spew.Sdump(result2))
 	}
 }

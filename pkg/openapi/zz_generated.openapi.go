@@ -131,9 +131,11 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/openshift/api/config/v1.ServingInfo":                                                    schema_openshift_api_config_v1_ServingInfo(ref),
 		"github.com/openshift/api/image/v1.DockerImageReference":                                            schema_openshift_api_image_v1_DockerImageReference(ref),
 		"github.com/openshift/api/image/v1.Image":                                                           schema_openshift_api_image_v1_Image(ref),
+		"github.com/openshift/api/image/v1.ImageBlobReferences":                                             schema_openshift_api_image_v1_ImageBlobReferences(ref),
 		"github.com/openshift/api/image/v1.ImageImportSpec":                                                 schema_openshift_api_image_v1_ImageImportSpec(ref),
 		"github.com/openshift/api/image/v1.ImageImportStatus":                                               schema_openshift_api_image_v1_ImageImportStatus(ref),
 		"github.com/openshift/api/image/v1.ImageLayer":                                                      schema_openshift_api_image_v1_ImageLayer(ref),
+		"github.com/openshift/api/image/v1.ImageLayerData":                                                  schema_openshift_api_image_v1_ImageLayerData(ref),
 		"github.com/openshift/api/image/v1.ImageList":                                                       schema_openshift_api_image_v1_ImageList(ref),
 		"github.com/openshift/api/image/v1.ImageLookupPolicy":                                               schema_openshift_api_image_v1_ImageLookupPolicy(ref),
 		"github.com/openshift/api/image/v1.ImageSignature":                                                  schema_openshift_api_image_v1_ImageSignature(ref),
@@ -142,6 +144,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/openshift/api/image/v1.ImageStreamImport":                                               schema_openshift_api_image_v1_ImageStreamImport(ref),
 		"github.com/openshift/api/image/v1.ImageStreamImportSpec":                                           schema_openshift_api_image_v1_ImageStreamImportSpec(ref),
 		"github.com/openshift/api/image/v1.ImageStreamImportStatus":                                         schema_openshift_api_image_v1_ImageStreamImportStatus(ref),
+		"github.com/openshift/api/image/v1.ImageStreamLayers":                                               schema_openshift_api_image_v1_ImageStreamLayers(ref),
 		"github.com/openshift/api/image/v1.ImageStreamList":                                                 schema_openshift_api_image_v1_ImageStreamList(ref),
 		"github.com/openshift/api/image/v1.ImageStreamMapping":                                              schema_openshift_api_image_v1_ImageStreamMapping(ref),
 		"github.com/openshift/api/image/v1.ImageStreamSpec":                                                 schema_openshift_api_image_v1_ImageStreamSpec(ref),
@@ -235,6 +238,8 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/openshift/api/security/v1.SecurityContextConstraintsList":                               schema_openshift_api_security_v1_SecurityContextConstraintsList(ref),
 		"github.com/openshift/api/security/v1.ServiceAccountPodSecurityPolicyReviewStatus":                  schema_openshift_api_security_v1_ServiceAccountPodSecurityPolicyReviewStatus(ref),
 		"github.com/openshift/api/security/v1.SupplementalGroupsStrategyOptions":                            schema_openshift_api_security_v1_SupplementalGroupsStrategyOptions(ref),
+		"github.com/openshift/api/servicecertsigner/v1alpha1.APIServiceCABundleInjectorConfig":              schema_openshift_api_servicecertsigner_v1alpha1_APIServiceCABundleInjectorConfig(ref),
+		"github.com/openshift/api/servicecertsigner/v1alpha1.ConfigMapCABundleInjectorConfig":               schema_openshift_api_servicecertsigner_v1alpha1_ConfigMapCABundleInjectorConfig(ref),
 		"github.com/openshift/api/servicecertsigner/v1alpha1.DelegatedAuthentication":                       schema_openshift_api_servicecertsigner_v1alpha1_DelegatedAuthentication(ref),
 		"github.com/openshift/api/servicecertsigner/v1alpha1.DelegatedAuthorization":                        schema_openshift_api_servicecertsigner_v1alpha1_DelegatedAuthorization(ref),
 		"github.com/openshift/api/servicecertsigner/v1alpha1.ServiceCertSignerOperatorConfig":               schema_openshift_api_servicecertsigner_v1alpha1_ServiceCertSignerOperatorConfig(ref),
@@ -6830,6 +6835,40 @@ func schema_openshift_api_image_v1_Image(ref common.ReferenceCallback) common.Op
 	}
 }
 
+func schema_openshift_api_image_v1_ImageBlobReferences(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "ImageBlobReferences describes the blob references within an image.",
+				Properties: map[string]spec.Schema{
+					"layers": {
+						SchemaProps: spec.SchemaProps{
+							Description: "layers is the list of blobs that compose this image, from base layer to top layer. All layers referenced by this array will be defined in the blobs map. Some images may have zero layers.",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Type:   []string{"string"},
+										Format: "",
+									},
+								},
+							},
+						},
+					},
+					"manifest": {
+						SchemaProps: spec.SchemaProps{
+							Description: "manifest, if set, is the blob that contains the image manifest. Some images do not have separate manifest blobs and this field will be set to nil if so.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+			},
+		},
+		Dependencies: []string{},
+	}
+}
+
 func schema_openshift_api_image_v1_ImageImportSpec(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -6939,6 +6978,34 @@ func schema_openshift_api_image_v1_ImageLayer(ref common.ReferenceCallback) comm
 					},
 				},
 				Required: []string{"name", "size", "mediaType"},
+			},
+		},
+		Dependencies: []string{},
+	}
+}
+
+func schema_openshift_api_image_v1_ImageLayerData(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "ImageLayerData contains metadata about an image layer.",
+				Properties: map[string]spec.Schema{
+					"size": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Size of the layer in bytes as defined by the underlying store. This field is optional if the necessary information about size is not available.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"mediaType": {
+						SchemaProps: spec.SchemaProps{
+							Description: "MediaType of the referenced object.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"size", "mediaType"},
 			},
 		},
 		Dependencies: []string{},
@@ -7333,6 +7400,67 @@ func schema_openshift_api_image_v1_ImageStreamImportStatus(ref common.ReferenceC
 		},
 		Dependencies: []string{
 			"github.com/openshift/api/image/v1.ImageImportStatus", "github.com/openshift/api/image/v1.ImageStream", "github.com/openshift/api/image/v1.RepositoryImportStatus"},
+	}
+}
+
+func schema_openshift_api_image_v1_ImageStreamLayers(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "ImageStreamLayers describes information about the layers referenced by images in this image stream.",
+				Properties: map[string]spec.Schema{
+					"kind": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"apiVersion": {
+						SchemaProps: spec.SchemaProps{
+							Description: "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"metadata": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Standard object's metadata.",
+							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"),
+						},
+					},
+					"blobs": {
+						SchemaProps: spec.SchemaProps{
+							Description: "blobs is a map of blob name to metadata about the blob.",
+							Type:        []string{"object"},
+							AdditionalProperties: &spec.SchemaOrBool{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("github.com/openshift/api/image/v1.ImageLayerData"),
+									},
+								},
+							},
+						},
+					},
+					"images": {
+						SchemaProps: spec.SchemaProps{
+							Description: "images is a map between an image name and the names of the blobs and manifests that comprise the image.",
+							Type:        []string{"object"},
+							AdditionalProperties: &spec.SchemaOrBool{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("github.com/openshift/api/image/v1.ImageBlobReferences"),
+									},
+								},
+							},
+						},
+					},
+				},
+				Required: []string{"blobs", "images"},
+			},
+		},
+		Dependencies: []string{
+			"github.com/openshift/api/image/v1.ImageBlobReferences", "github.com/openshift/api/image/v1.ImageLayerData", "k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"},
 	}
 }
 
@@ -8207,6 +8335,13 @@ func schema_openshift_api_network_v1_ClusterNetwork(ref common.ReferenceCallback
 							},
 						},
 					},
+					"vxlanPort": {
+						SchemaProps: spec.SchemaProps{
+							Description: "VXLANPort sets the VXLAN destination port used by the cluster. It is set by the master configuration file on startup and cannot be edited manually. Valid values for VXLANPort are integers 1-65535 inclusive and if unset defaults to 4789. Changing VXLANPort allows users to resolve issues between openshift SDN and other software trying to use the same VXLAN destination port.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
 				},
 				Required: []string{"serviceNetwork", "clusterNetworks"},
 			},
@@ -8513,7 +8648,21 @@ func schema_openshift_api_network_v1_HostSubnet(ref common.ReferenceCallback) co
 					},
 					"egressIPs": {
 						SchemaProps: spec.SchemaProps{
-							Description: "EgressIPs is the list of automatic egress IP addresses currently hosted by this node",
+							Description: "EgressIPs is the list of automatic egress IP addresses currently hosted by this node. If EgressCIDRs is empty, this can be set by hand; if EgressCIDRs is set then the master will overwrite the value here with its own allocation of egress IPs.",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Type:   []string{"string"},
+										Format: "",
+									},
+								},
+							},
+						},
+					},
+					"egressCIDRs": {
+						SchemaProps: spec.SchemaProps{
+							Description: "EgressCIDRs is the list of CIDR ranges available for automatically assigning egress IPs to this node from. If this field is set then EgressIPs should be treated as read-only.",
 							Type:        []string{"array"},
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
@@ -11510,6 +11659,34 @@ func schema_openshift_api_security_v1_SecurityContextConstraints(ref common.Refe
 							},
 						},
 					},
+					"allowedUnsafeSysctls": {
+						SchemaProps: spec.SchemaProps{
+							Description: "AllowedUnsafeSysctls is a list of explicitly allowed unsafe sysctls, defaults to none. Each entry is either a plain sysctl name or ends in \"*\" in which case it is considered as a prefix of allowed sysctls. Single * means all unsafe sysctls are allowed. Kubelet has to whitelist all allowed unsafe sysctls explicitly to avoid rejection.\n\nExamples: e.g. \"foo/*\" allows \"foo/bar\", \"foo/baz\", etc. e.g. \"foo.*\" allows \"foo.bar\", \"foo.baz\", etc.",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Type:   []string{"string"},
+										Format: "",
+									},
+								},
+							},
+						},
+					},
+					"forbiddenSysctls": {
+						SchemaProps: spec.SchemaProps{
+							Description: "ForbiddenSysctls is a list of explicitly forbidden sysctls, defaults to none. Each entry is either a plain sysctl name or ends in \"*\" in which case it is considered as a prefix of forbidden sysctls. Single * means all sysctls are forbidden.\n\nExamples: e.g. \"foo/*\" forbids \"foo/bar\", \"foo/baz\", etc. e.g. \"foo.*\" forbids \"foo.bar\", \"foo.baz\", etc.",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Type:   []string{"string"},
+										Format: "",
+									},
+								},
+							},
+						},
+					},
 				},
 				Required: []string{"priority", "allowPrivilegedContainer", "defaultAddCapabilities", "requiredDropCapabilities", "allowedCapabilities", "allowHostDirVolumePlugin", "volumes", "allowHostNetwork", "allowHostPorts", "allowHostPID", "allowHostIPC", "readOnlyRootFilesystem"},
 			},
@@ -11639,6 +11816,114 @@ func schema_openshift_api_security_v1_SupplementalGroupsStrategyOptions(ref comm
 		},
 		Dependencies: []string{
 			"github.com/openshift/api/security/v1.IDRange"},
+	}
+}
+
+func schema_openshift_api_servicecertsigner_v1alpha1_APIServiceCABundleInjectorConfig(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "APIServiceCABundleInjectorConfig provides information to configure an APIService CA Bundle Injector controller",
+				Properties: map[string]spec.Schema{
+					"kind": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"apiVersion": {
+						SchemaProps: spec.SchemaProps{
+							Description: "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"servingInfo": {
+						SchemaProps: spec.SchemaProps{
+							Description: "ServingInfo is the HTTP serving information for the controller's endpoints",
+							Ref:         ref("github.com/openshift/api/config/v1.HTTPServingInfo"),
+						},
+					},
+					"authentication": {
+						SchemaProps: spec.SchemaProps{
+							Description: "authentication allows configuration of authentication for the endpoints",
+							Ref:         ref("github.com/openshift/api/servicecertsigner/v1alpha1.DelegatedAuthentication"),
+						},
+					},
+					"authorization": {
+						SchemaProps: spec.SchemaProps{
+							Description: "authorization allows configuration of authentication for the endpoints",
+							Ref:         ref("github.com/openshift/api/servicecertsigner/v1alpha1.DelegatedAuthorization"),
+						},
+					},
+					"caBundleFile": {
+						SchemaProps: spec.SchemaProps{
+							Description: "caBundleFile holds the ca bundle to apply to APIServices",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"caBundleFile"},
+			},
+		},
+		Dependencies: []string{
+			"github.com/openshift/api/config/v1.HTTPServingInfo", "github.com/openshift/api/servicecertsigner/v1alpha1.DelegatedAuthentication", "github.com/openshift/api/servicecertsigner/v1alpha1.DelegatedAuthorization"},
+	}
+}
+
+func schema_openshift_api_servicecertsigner_v1alpha1_ConfigMapCABundleInjectorConfig(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "ConfigMapCABundleInjectorConfig provides information to configure a ConfigMap CA Bundle Injector controller",
+				Properties: map[string]spec.Schema{
+					"kind": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"apiVersion": {
+						SchemaProps: spec.SchemaProps{
+							Description: "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"servingInfo": {
+						SchemaProps: spec.SchemaProps{
+							Description: "ServingInfo is the HTTP serving information for the controller's endpoints",
+							Ref:         ref("github.com/openshift/api/config/v1.HTTPServingInfo"),
+						},
+					},
+					"authentication": {
+						SchemaProps: spec.SchemaProps{
+							Description: "authentication allows configuration of authentication for the endpoints",
+							Ref:         ref("github.com/openshift/api/servicecertsigner/v1alpha1.DelegatedAuthentication"),
+						},
+					},
+					"authorization": {
+						SchemaProps: spec.SchemaProps{
+							Description: "authorization allows configuration of authentication for the endpoints",
+							Ref:         ref("github.com/openshift/api/servicecertsigner/v1alpha1.DelegatedAuthorization"),
+						},
+					},
+					"caBundleFile": {
+						SchemaProps: spec.SchemaProps{
+							Description: "caBundleFile holds the ca bundle to apply to ConfigMaps",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"caBundleFile"},
+			},
+		},
+		Dependencies: []string{
+			"github.com/openshift/api/config/v1.HTTPServingInfo", "github.com/openshift/api/servicecertsigner/v1alpha1.DelegatedAuthentication", "github.com/openshift/api/servicecertsigner/v1alpha1.DelegatedAuthorization"},
 	}
 }
 
@@ -11812,8 +12097,20 @@ func schema_openshift_api_servicecertsigner_v1alpha1_ServiceCertSignerOperatorCo
 							Ref:         ref("k8s.io/apimachinery/pkg/runtime.RawExtension"),
 						},
 					},
+					"apiServiceCABundleInjectorConfig": {
+						SchemaProps: spec.SchemaProps{
+							Description: "apiServiceCABundleInjectorConfig holds a sparse config that the user wants for this component.  It only needs to be the overrides from the defaults it will end up overlaying in the following order: 1. hardcoded default 2. this config",
+							Ref:         ref("k8s.io/apimachinery/pkg/runtime.RawExtension"),
+						},
+					},
+					"configMapCABundleInjectorConfig": {
+						SchemaProps: spec.SchemaProps{
+							Description: "configMapCABundleInjectorConfig holds a sparse config that the user wants for this component.  It only needs to be the overrides from the defaults it will end up overlaying in the following order: 1. hardcoded default 2. this config",
+							Ref:         ref("k8s.io/apimachinery/pkg/runtime.RawExtension"),
+						},
+					},
 				},
-				Required: []string{"managementState", "imagePullSpec", "version", "serviceServingCertSignerConfig"},
+				Required: []string{"managementState", "imagePullSpec", "version", "serviceServingCertSignerConfig", "apiServiceCABundleInjectorConfig", "configMapCABundleInjectorConfig"},
 			},
 		},
 		Dependencies: []string{
@@ -12974,8 +13271,15 @@ func schema_openshift_api_webconsole_v1_ClusterInfo(ref common.ReferenceCallback
 							Format:      "",
 						},
 					},
+					"adminConsolePublicURL": {
+						SchemaProps: spec.SchemaProps{
+							Description: "AdminConsolePublicURL is an optional, public URL of the OpenShift admin console. If specified, the web console will add a link to the admin console in a context selector in its masthead.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
 				},
-				Required: []string{"consolePublicURL", "masterPublicURL", "loggingPublicURL", "metricsPublicURL", "logoutPublicURL"},
+				Required: []string{"consolePublicURL", "masterPublicURL", "loggingPublicURL", "metricsPublicURL", "logoutPublicURL", "adminConsolePublicURL"},
 			},
 		},
 		Dependencies: []string{},
@@ -22070,7 +22374,7 @@ func schema_k8sio_api_core_v1_CSIPersistentVolumeSource(ref common.ReferenceCall
 					},
 					"fsType": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Filesystem type to mount. Must be a filesystem type supported by the host operating system. Ex. \"ext4\", \"xfs\", \"ntfs\". Implicitly inferred to be \"ext4\" if unspecified.",
+							Description: "Filesystem type to mount. Must be a filesystem type supported by the host operating system. Ex. \"ext4\", \"xfs\", \"ntfs\".",
 							Type:        []string{"string"},
 							Format:      "",
 						},
@@ -31065,7 +31369,7 @@ func schema_k8sio_api_core_v1_VolumeMount(ref common.ReferenceCallback) common.O
 					},
 					"mountPropagation": {
 						SchemaProps: spec.SchemaProps{
-							Description: "mountPropagation determines how mounts are propagated from the host to container and the other way around. When not set, MountPropagationHostToContainer is used. This field is beta in 1.10.",
+							Description: "mountPropagation determines how mounts are propagated from the host to container and the other way around. When not set, MountPropagationNone is used. This field is beta in 1.10.",
 							Type:        []string{"string"},
 							Format:      "",
 						},

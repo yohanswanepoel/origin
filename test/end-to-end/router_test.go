@@ -31,7 +31,7 @@ import (
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	watchjson "k8s.io/kubernetes/pkg/watch/json"
 
-	routeapiv1 "github.com/openshift/api/route/v1"
+	"github.com/openshift/origin/pkg/api/legacy"
 	routeapi "github.com/openshift/origin/pkg/route/apis/route"
 	tr "github.com/openshift/origin/test/integration/router"
 	testutil "github.com/openshift/origin/test/util"
@@ -1229,7 +1229,7 @@ func sendTimeout(t *testing.T, ch chan string, s string, timeout time.Duration) 
 
 // eventString marshals the event into a string
 func eventString(e *watch.Event) string {
-	obj, _ := watchjson.Object(legacyscheme.Codecs.LegacyCodec(routeapiv1.LegacySchemeGroupVersion), e)
+	obj, _ := watchjson.Object(legacyscheme.Codecs.LegacyCodec(legacy.GroupVersion), e)
 	s, _ := json.Marshal(obj)
 	return string(s)
 }
@@ -1322,6 +1322,7 @@ func createAndStartRouterContainerExtended(dockerCli *dockerClient.Client, maste
 		fmt.Sprintf("DEFAULT_CERTIFICATE=%s\n%s", defaultCert, defaultKey),
 		fmt.Sprintf("ROUTER_BIND_PORTS_AFTER_SYNC=%s", strconv.FormatBool(bindPortsAfterSync)),
 		fmt.Sprintf("NAMESPACE_LABELS=%s", namespaceLabels),
+		fmt.Sprintf("ROUTER_HAPROXY_CONFIG_MANAGER=true"),
 	}
 
 	reloadIntVar := fmt.Sprintf("RELOAD_INTERVAL=%ds", reloadInterval)

@@ -37,7 +37,7 @@ import (
 	"github.com/openshift/origin/pkg/cmd/server/start"
 	cmdutil "github.com/openshift/origin/pkg/cmd/util"
 	utilflags "github.com/openshift/origin/pkg/cmd/util/flags"
-	newproject "github.com/openshift/origin/pkg/oc/admin/project"
+	newproject "github.com/openshift/origin/pkg/oc/cli/admin/project"
 	projectclient "github.com/openshift/origin/pkg/project/generated/internalclientset/typed/project/internalversion"
 	"github.com/openshift/origin/test/util"
 	// install all APIs
@@ -451,7 +451,7 @@ func StartConfiguredMasterWithOptions(masterConfig *configapi.MasterConfig) (str
 	guardMaster()
 
 	// openshift apiserver needs its own scheme, but this installs it for now.  oc needs it off, openshift apiserver needs it on. awesome.
-	legacy.LegacyInstallAll(legacyscheme.Scheme)
+	legacy.InstallInternalLegacyAll(legacyscheme.Scheme)
 
 	if masterConfig.EtcdConfig != nil && len(masterConfig.EtcdConfig.StorageDir) > 0 {
 		os.RemoveAll(masterConfig.EtcdConfig.StorageDir)

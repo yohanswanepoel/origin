@@ -26,8 +26,11 @@ var _ = g.Describe("[Feature:Builds][Conformance] s2i build with a root user ima
 		})
 
 		g.JustBeforeEach(func() {
+			g.By("waiting for default service account")
+			err := exutil.WaitForServiceAccount(oc.KubeClient().Core().ServiceAccounts(oc.Namespace()), "default")
+			o.Expect(err).NotTo(o.HaveOccurred())
 			g.By("waiting for builder service account")
-			err := exutil.WaitForBuilderAccount(oc.AdminKubeClient().Core().ServiceAccounts(oc.Namespace()))
+			err = exutil.WaitForServiceAccount(oc.KubeClient().Core().ServiceAccounts(oc.Namespace()), "builder")
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			g.By("creating a root build container")
@@ -46,7 +49,7 @@ var _ = g.Describe("[Feature:Builds][Conformance] s2i build with a root user ima
 		})
 
 		g.It("should create a root build and fail without a privileged SCC", func() {
-			err := oc.Run("new-app").Args("nodejsroot~https://github.com/openshift/nodejs-ex", "--name", "nodejsfail").Execute()
+			err := oc.Run("new-app").Args("nodejsroot~https://github.com/sclorg/nodejs-ex", "--name", "nodejsfail").Execute()
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			err = exutil.WaitForABuild(oc.BuildClient().Build().Builds(oc.Namespace()), "nodejsfail-1", nil, nil, nil)
@@ -88,7 +91,7 @@ var _ = g.Describe("[Feature:Builds][Conformance] s2i build with a root user ima
 			})
 			o.Expect(err).NotTo(o.HaveOccurred())
 
-			err = oc.Run("new-app").Args("nodejsroot~https://github.com/openshift/nodejs-ex", "--name", "nodejspass").Execute()
+			err = oc.Run("new-app").Args("nodejsroot~https://github.com/sclorg/nodejs-ex", "--name", "nodejspass").Execute()
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			err = exutil.WaitForABuild(oc.BuildClient().Build().Builds(oc.Namespace()), "nodejspass-1", nil, nil, nil)

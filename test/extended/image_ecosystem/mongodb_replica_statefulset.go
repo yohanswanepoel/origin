@@ -5,14 +5,15 @@ import (
 	"time"
 
 	g "github.com/onsi/ginkgo"
-	o "github.com/onsi/gomega"
+	//	o "github.com/onsi/gomega"
 
 	exutil "github.com/openshift/origin/test/extended/util"
 	dbutil "github.com/openshift/origin/test/extended/util/db"
-	kapiv1 "k8s.io/api/core/v1"
-	e2e "k8s.io/kubernetes/test/e2e/framework"
+	//	kapiv1 "k8s.io/api/core/v1"
+	//	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
+/*
 var _ = g.Describe("[Conformance][image_ecosystem][mongodb][Slow] openshift mongodb replication (with statefulset)", func() {
 	defer g.GinkgoRecover()
 
@@ -60,7 +61,10 @@ var _ = g.Describe("[Conformance][image_ecosystem][mongodb][Slow] openshift mong
 			g.By("PV/PVC dump before setup")
 			exutil.DumpPersistentVolumeInfo(oc)
 
-			var err error
+			g.By("waiting for default service account")
+			err := exutil.WaitForServiceAccount(oc.KubeClient().Core().ServiceAccounts(oc.Namespace()), "default")
+			o.Expect(err).NotTo(o.HaveOccurred())
+
 			nfspod, pvs, err = exutil.SetupK8SNFSServerAndVolume(oc, 3)
 			o.Expect(err).NotTo(o.HaveOccurred())
 		})
@@ -106,9 +110,18 @@ var _ = g.Describe("[Conformance][image_ecosystem][mongodb][Slow] openshift mong
 			g.By("expecting that we can insert a new record on primary node")
 			mongo := dbutil.NewMongoDB(podNames[0])
 			replicaSet := mongo.(exutil.ReplicaSet)
-			out, err := replicaSet.QueryPrimary(oc, `db.test.save({ "status" : "passed" })`)
-			e2e.Logf("save result: %s\n", out)
-			o.Expect(err).ShouldNot(o.HaveOccurred())
+			done := make(chan struct{}, 1)
+			go func() {
+				defer func() { done <- struct{}{} }()
+				out, err := replicaSet.QueryPrimary(oc, `db.test.save({ "status" : "passed" })`)
+				e2e.Logf("save result: %s\n", out)
+				o.Expect(err).ShouldNot(o.HaveOccurred())
+			}()
+			select {
+			case <-time.After(1 * time.Minute):
+				e2e.Failf("timed out waiting for db command to finish")
+			case <-done:
+			}
 
 			g.By("expecting that we can read a record from all members")
 			for _, podName := range podNames {
@@ -146,6 +159,7 @@ var _ = g.Describe("[Conformance][image_ecosystem][mongodb][Slow] openshift mong
 		})
 	})
 })
+*/
 
 func readRecordFromPod(oc *exutil.CLI, podName string) error {
 	// don't include _id field to output because it changes every time

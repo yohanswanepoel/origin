@@ -24,12 +24,15 @@ import (
 	rbacapi "k8s.io/kubernetes/pkg/apis/rbac"
 	"k8s.io/kubernetes/test/e2e/framework"
 
+	authorization "github.com/openshift/api/authorization"
 	templateapiv1 "github.com/openshift/api/template/v1"
+	"github.com/openshift/origin/pkg/api/legacy"
 	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
 	"github.com/openshift/origin/pkg/cmd/server/bootstrappolicy"
 	templateapi "github.com/openshift/origin/pkg/template/apis/template"
 	"github.com/openshift/origin/pkg/template/client/internalversion"
+	templatecontroller "github.com/openshift/origin/pkg/template/controller"
 	"github.com/openshift/origin/pkg/templateservicebroker/openservicebroker/api"
 	"github.com/openshift/origin/pkg/templateservicebroker/openservicebroker/client"
 	exutil "github.com/openshift/origin/test/extended/util"
@@ -55,7 +58,11 @@ var _ = g.Describe("[Conformance][templates] templateservicebroker end-to-end te
 	g.BeforeEach(func() {
 		framework.SkipIfProviderIs("gce")
 
-		err := exutil.WaitForBuilderAccount(cli.KubeClient().Core().ServiceAccounts(cli.Namespace()))
+		g.By("waiting for default service account")
+		err := exutil.WaitForServiceAccount(cli.KubeClient().Core().ServiceAccounts(cli.Namespace()), "default")
+		o.Expect(err).NotTo(o.HaveOccurred())
+		g.By("waiting for builder service account")
+		err = exutil.WaitForServiceAccount(cli.KubeClient().Core().ServiceAccounts(cli.Namespace()), "builder")
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		brokercli, err = TSBClient(cli)
@@ -214,7 +221,7 @@ var _ = g.Describe("[Conformance][templates] templateservicebroker end-to-end te
 		}))
 
 		o.Expect(templateInstance.Status.Conditions).To(o.HaveLen(1))
-		o.Expect(templateInstance.HasCondition(templateapi.TemplateInstanceReady, kapi.ConditionTrue)).To(o.Equal(true))
+		o.Expect(templatecontroller.TemplateInstanceHasCondition(templateInstance, templateapi.TemplateInstanceReady, kapi.ConditionTrue)).To(o.Equal(true))
 
 		o.Expect(templateInstance.Status.Objects).To(o.HaveLen(len(template.Objects)))
 		for i, obj := range templateInstance.Status.Objects {
@@ -305,8 +312,8 @@ var _ = g.Describe("[Conformance][templates] templateservicebroker end-to-end te
 					kapi.Kind("Secret"),
 					kapi.Kind("RoleBinding"),
 					rbacapi.Kind("RoleBinding"),
-					authorizationapi.LegacyKind("RoleBinding"),
-					authorizationapi.Kind("RoleBinding"),
+					legacy.Kind("RoleBinding"),
+					authorization.Kind("RoleBinding"),
 					schema.GroupKind{Group: "events.k8s.io", Kind: "Event"}:
 					continue
 				}

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	networkapi "github.com/openshift/origin/pkg/network/apis/network"
+	networkapi "github.com/openshift/api/network/v1"
 
 	kapi "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -211,39 +211,45 @@ func Test_checkClusterObjects(t *testing.T) {
 }
 
 func Test_parseNetworkInfo(t *testing.T) {
+	vxlanPtr := uint32(4789)
 	tests := []struct {
 		name           string
 		cidrs          []networkapi.ClusterNetworkEntry
 		serviceNetwork string
+		vxlan          *uint32
 		err            string
 	}{
 		{
 			name:           "valid single cidr",
 			cidrs:          []networkapi.ClusterNetworkEntry{{CIDR: "10.0.0.0/16"}},
 			serviceNetwork: "172.30.0.0/16",
+			vxlan:          &vxlanPtr,
 			err:            "",
 		},
 		{
 			name:           "valid multiple cidr",
 			cidrs:          []networkapi.ClusterNetworkEntry{{CIDR: "10.0.0.0/16"}, {CIDR: "10.4.0.0/16"}},
 			serviceNetwork: "172.30.0.0/16",
+			vxlan:          &vxlanPtr,
 			err:            "",
 		},
 		{
 			name:           "invalid CIDR address",
 			cidrs:          []networkapi.ClusterNetworkEntry{{CIDR: "Invalid"}},
 			serviceNetwork: "172.30.0.0/16",
+			vxlan:          &vxlanPtr,
 			err:            "Invalid",
 		},
 		{
 			name:           "invalid serviceNetwork",
 			cidrs:          []networkapi.ClusterNetworkEntry{{CIDR: "10.0.0.0/16"}},
 			serviceNetwork: "172.30.0.0i/16",
+			vxlan:          &vxlanPtr,
 			err:            "172.30.0.0i/16",
 		},
 	}
 	for _, test := range tests {
-		_, err := ParseNetworkInfo(test.cidrs, test.serviceNetwork)
+		_, err := ParseNetworkInfo(test.cidrs, test.serviceNetwork, test.vxlan)
 		if err == nil {
 			if len(test.err) > 0 {
 				t.Fatalf("test %q unexpectedly did not get an error", test.name)

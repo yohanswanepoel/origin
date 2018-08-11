@@ -15,11 +15,14 @@ import (
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	deploymentutil "k8s.io/kubernetes/pkg/controller/deployment/util"
 
+	oapps "github.com/openshift/api/apps"
+	"github.com/openshift/api/build"
 	appsapi "github.com/openshift/origin/pkg/apps/apis/apps"
 	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	fakebuild "github.com/openshift/origin/pkg/build/generated/internalclientset/fake"
 	routeapi "github.com/openshift/origin/pkg/route/apis/route"
 
+	"github.com/openshift/api/route"
 	_ "github.com/openshift/origin/pkg/apps/apis/apps/install"
 	_ "github.com/openshift/origin/pkg/route/apis/route/install"
 )
@@ -36,7 +39,7 @@ func TestCheckReadiness(t *testing.T) {
 	}{
 		// Build
 		{
-			groupKind: buildapi.Kind("Build"),
+			groupKind: build.Kind("Build"),
 			object: &buildapi.Build{
 				Status: buildapi.BuildStatus{
 					Phase: buildapi.BuildPhaseNew,
@@ -44,7 +47,7 @@ func TestCheckReadiness(t *testing.T) {
 			},
 		},
 		{
-			groupKind: buildapi.Kind("Build"),
+			groupKind: build.Kind("Build"),
 			object: &buildapi.Build{
 				Status: buildapi.BuildStatus{
 					Phase: buildapi.BuildPhaseComplete,
@@ -53,7 +56,7 @@ func TestCheckReadiness(t *testing.T) {
 			expectedReady: true,
 		},
 		{
-			groupKind: buildapi.Kind("Build"),
+			groupKind: build.Kind("Build"),
 			object: &buildapi.Build{
 				Status: buildapi.BuildStatus{
 					Phase: buildapi.BuildPhaseError,
@@ -64,11 +67,11 @@ func TestCheckReadiness(t *testing.T) {
 
 		// BuildConfig
 		{
-			groupKind: buildapi.Kind("BuildConfig"),
+			groupKind: build.Kind("BuildConfig"),
 			object:    &buildapi.BuildConfig{},
 		},
 		{
-			groupKind: buildapi.Kind("BuildConfig"),
+			groupKind: build.Kind("BuildConfig"),
 			object: &buildapi.BuildConfig{
 				Status: buildapi.BuildConfigStatus{
 					LastVersion: 1,
@@ -90,7 +93,7 @@ func TestCheckReadiness(t *testing.T) {
 			expectedReady: true,
 		},
 		{
-			groupKind: buildapi.Kind("BuildConfig"),
+			groupKind: build.Kind("BuildConfig"),
 			object: &buildapi.BuildConfig{
 				Status: buildapi.BuildConfigStatus{
 					LastVersion: 1,
@@ -153,11 +156,11 @@ func TestCheckReadiness(t *testing.T) {
 
 		// DeploymentConfig
 		{
-			groupKind: appsapi.Kind("DeploymentConfig"),
+			groupKind: oapps.Kind("DeploymentConfig"),
 			object:    &appsapi.DeploymentConfig{},
 		},
 		{
-			groupKind: appsapi.Kind("DeploymentConfig"),
+			groupKind: oapps.Kind("DeploymentConfig"),
 			object: &appsapi.DeploymentConfig{
 				Status: appsapi.DeploymentConfigStatus{
 					Conditions: []appsapi.DeploymentCondition{
@@ -176,7 +179,7 @@ func TestCheckReadiness(t *testing.T) {
 			expectedReady: true,
 		},
 		{
-			groupKind: appsapi.Kind("DeploymentConfig"),
+			groupKind: oapps.Kind("DeploymentConfig"),
 			object: &appsapi.DeploymentConfig{
 				Status: appsapi.DeploymentConfigStatus{
 					Conditions: []appsapi.DeploymentCondition{
@@ -237,7 +240,7 @@ func TestCheckReadiness(t *testing.T) {
 			expectedReady: true,
 		},
 		{
-			groupKind: routeapi.Kind("Route"),
+			groupKind: route.Kind("Route"),
 			object: &routeapi.Route{
 				Spec: routeapi.RouteSpec{
 					Host: "",
@@ -246,7 +249,7 @@ func TestCheckReadiness(t *testing.T) {
 			expectedReady: false,
 		},
 		{
-			groupKind: routeapi.Kind("Route"),
+			groupKind: route.Kind("Route"),
 			object: &routeapi.Route{
 				Spec: routeapi.RouteSpec{
 					Host: "app.example.com",
@@ -255,7 +258,7 @@ func TestCheckReadiness(t *testing.T) {
 			expectedReady: true,
 		},
 		{
-			groupKind: schema.GroupKind{Group: "route.openshift.io", Kind: "Route"},
+			groupKind: route.Kind("Route"),
 			object: &routeapi.Route{
 				Spec: routeapi.RouteSpec{
 					Host: "",
@@ -264,7 +267,7 @@ func TestCheckReadiness(t *testing.T) {
 			expectedReady: false,
 		},
 		{
-			groupKind: schema.GroupKind{Group: "route.openshift.io", Kind: "Route"},
+			groupKind: route.Kind("Route"),
 			object: &routeapi.Route{
 				Spec: routeapi.RouteSpec{
 					Host: "app.example.com",

@@ -1,3 +1,5 @@
+// +build linux
+
 package node
 
 import (
@@ -8,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ktypes "k8s.io/apimachinery/pkg/types"
 
-	networkapi "github.com/openshift/origin/pkg/network/apis/network"
+	networkapi "github.com/openshift/api/network/v1"
 	"github.com/openshift/origin/pkg/network/common"
 )
 
@@ -30,6 +32,7 @@ func assertHostSubnetFlowChanges(hsw *hostSubnetWatcher, flows *[]string, change
 }
 
 func setupHostSubnetWatcher(t *testing.T) (*hostSubnetWatcher, []string) {
+	vxlanPtr := uint32(4789)
 	_, oc, _ := setupOVSController(t)
 
 	networkInfo, err := common.ParseNetworkInfo(
@@ -40,6 +43,7 @@ func setupHostSubnetWatcher(t *testing.T) (*hostSubnetWatcher, []string) {
 			},
 		},
 		"172.30.0.0/16",
+		&vxlanPtr,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error parsing network info: %v", err)

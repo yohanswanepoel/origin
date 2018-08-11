@@ -28,8 +28,8 @@ import (
 	oauthapi "github.com/openshift/api/oauth/v1"
 	oauthclient "github.com/openshift/client-go/oauth/clientset/versioned/typed/oauth/v1"
 	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
-	clientregistry "github.com/openshift/origin/pkg/oauth/registry/oauthclient"
 	"github.com/openshift/origin/pkg/oauth/urls"
+	"github.com/openshift/origin/pkg/oauthserver/api"
 	"github.com/openshift/origin/pkg/oauthserver/authenticator/challenger/passwordchallenger"
 	"github.com/openshift/origin/pkg/oauthserver/authenticator/challenger/placeholderchallenger"
 	"github.com/openshift/origin/pkg/oauthserver/authenticator/password/allowanypassword"
@@ -283,7 +283,7 @@ func (c *OAuthServerConfig) getAuthorizeAuthenticationHandlers(mux mux, errorHan
 }
 
 // getGrantHandler returns the object that handles approving or rejecting grant requests
-func (c *OAuthServerConfig) getGrantHandler(mux mux, auth authenticator.Request, clientregistry clientregistry.Getter, authregistry oauthclient.OAuthClientAuthorizationInterface) handlers.GrantHandler {
+func (c *OAuthServerConfig) getGrantHandler(mux mux, auth authenticator.Request, clientregistry api.OAuthClientGetter, authregistry oauthclient.OAuthClientAuthorizationInterface) handlers.GrantHandler {
 	// check that the global default strategy is something we honor
 	if !configapi.ValidGrantHandlerTypes.Has(string(c.ExtraOAuthConfig.Options.GrantConfig.Method)) {
 		glog.Fatalf("No grant handler found that matches %v.  The OAuth server cannot start!", c.ExtraOAuthConfig.Options.GrantConfig.Method)
@@ -465,11 +465,15 @@ func (c *OAuthServerConfig) getAuthenticationHandler(mux mux, errorHandler handl
 func (c *OAuthServerConfig) getOAuthProvider(identityProvider configapi.IdentityProvider) (external.Provider, error) {
 	switch provider := identityProvider.Provider.(type) {
 	case (*configapi.GitHubIdentityProvider):
+		transport, err := transportFor(provider.CA, "", "")
+		if err != nil {
+			return nil, err
+		}
 		clientSecret, err := configapi.ResolveStringValue(provider.ClientSecret)
 		if err != nil {
 			return nil, err
 		}
-		return github.NewProvider(identityProvider.Name, provider.ClientID, clientSecret, provider.Organizations, provider.Teams), nil
+		return github.NewProvider(identityProvider.Name, provider.ClientID, clientSecret, provider.Hostname, transport, provider.Organizations, provider.Teams), nil
 
 	case (*configapi.GitLabIdentityProvider):
 		transport, err := transportFor(provider.CA, "", "")
@@ -480,7 +484,7 @@ func (c *OAuthServerConfig) getOAuthProvider(identityProvider configapi.Identity
 		if err != nil {
 			return nil, err
 		}
-		return gitlab.NewProvider(identityProvider.Name, transport, provider.URL, provider.ClientID, clientSecret)
+		return gitlab.NewProvider(identityProvider.Name, provider.URL, provider.ClientID, clientSecret, transport, provider.Legacy)
 
 	case (*configapi.GoogleIdentityProvider):
 		clientSecret, err := configapi.ResolveStringValue(provider.ClientSecret)

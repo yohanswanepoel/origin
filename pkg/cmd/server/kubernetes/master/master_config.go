@@ -74,7 +74,7 @@ import (
 	kversion "k8s.io/kubernetes/pkg/version"
 
 	"github.com/openshift/library-go/pkg/crypto"
-	"github.com/openshift/origin/pkg/api"
+	"github.com/openshift/origin/pkg/api/legacy"
 	oauthorizer "github.com/openshift/origin/pkg/authorization/authorizer"
 	"github.com/openshift/origin/pkg/authorization/authorizer/scope"
 	"github.com/openshift/origin/pkg/cmd/flagtypes"
@@ -84,10 +84,10 @@ import (
 	cmdflags "github.com/openshift/origin/pkg/cmd/util/flags"
 	oauthutil "github.com/openshift/origin/pkg/oauth/util"
 	openapigenerated "github.com/openshift/origin/pkg/openapi"
-	securityapi "github.com/openshift/origin/pkg/security/apis/security"
 	"github.com/openshift/origin/pkg/version"
 
 	// TODO fix this install, it is required for TestPreferredGroupVersions to pass
+	"github.com/openshift/api/security"
 	_ "github.com/openshift/origin/pkg/authorization/apis/authorization/install"
 )
 
@@ -95,7 +95,7 @@ import (
 // and not subjected to the default server timeout.
 const originLongRunningEndpointsRE = "(/|^)(buildconfigs/.*/instantiatebinary|imagestreamimports)$"
 
-var LegacyAPIGroupPrefixes = sets.NewString(apiserver.DefaultLegacyAPIPrefix, api.Prefix)
+var LegacyAPIGroupPrefixes = sets.NewString(apiserver.DefaultLegacyAPIPrefix, legacy.RESTPrefix)
 
 // TODO I'm honestly not sure this is worth it. We're not likely to ever be able to launch from flags, so this just
 // adds a layer of complexity that is driving me crazy.
@@ -249,7 +249,7 @@ func BuildStorageFactory(server *kapiserveroptions.ServerRunOptions, enforcedSto
 	storageFactory.AddCohabitatingResources(apps.Resource("daemonsets"), extensions.Resource("daemonsets"))
 	storageFactory.AddCohabitatingResources(apps.Resource("replicasets"), extensions.Resource("replicasets"))
 	storageFactory.AddCohabitatingResources(networking.Resource("networkpolicies"), extensions.Resource("networkpolicies"))
-	storageFactory.AddCohabitatingResources(securityapi.Resource("securitycontextconstraints"), kapi.Resource("securitycontextconstraints"))
+	storageFactory.AddCohabitatingResources(security.Resource("securitycontextconstraints"), kapi.Resource("securitycontextconstraints"))
 	// TODO: switch to prefer policy API group in 3.11
 	storageFactory.AddCohabitatingResources(extensions.Resource("podsecuritypolicies"), policy.Resource("podsecuritypolicies"))
 

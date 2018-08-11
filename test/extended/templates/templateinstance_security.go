@@ -14,13 +14,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	kapi "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/apis/storage"
 
-	"github.com/openshift/origin/pkg/api/latest"
 	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 	"github.com/openshift/origin/pkg/cmd/server/bootstrappolicy"
+	routeapi "github.com/openshift/origin/pkg/route/apis/route"
 	templateapi "github.com/openshift/origin/pkg/template/apis/template"
+	templatecontroller "github.com/openshift/origin/pkg/template/controller"
 	userapi "github.com/openshift/origin/pkg/user/apis/user"
 	exutil "github.com/openshift/origin/test/extended/util"
 )
@@ -36,16 +38,14 @@ var _ = g.Describe("[Conformance][templates] templateinstance security tests", f
 		adminuser, edituser, editbygroupuser *userapi.User
 		editgroup                            *userapi.Group
 
-		dummyservice = &kapi.Service{
+		dummyroute = &routeapi.Route{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "service",
+				Name:      "route",
 				Namespace: "${NAMESPACE}",
 			},
-			Spec: kapi.ServiceSpec{
-				Ports: []kapi.ServicePort{
-					{
-						Port: 1,
-					},
+			Spec: routeapi.RouteSpec{
+				To: routeapi.RouteTargetReference{
+					Name: "dummyroute",
 				},
 			},
 		}
@@ -129,10 +129,10 @@ var _ = g.Describe("[Conformance][templates] templateinstance security tests", f
 					by:              "checking edituser can create an object in a permitted namespace",
 					user:            edituser,
 					namespace:       cli.Namespace(),
-					objects:         []runtime.Object{dummyservice},
+					objects:         []runtime.Object{dummyroute},
 					expectCondition: templateapi.TemplateInstanceReady,
 					checkOK: func(namespace string) bool {
-						_, err := cli.AdminKubeClient().CoreV1().Services(namespace).Get(dummyservice.Name, metav1.GetOptions{})
+						_, err := cli.AdminRouteClient().Route().Routes(namespace).Get(dummyroute.Name, metav1.GetOptions{})
 						return err == nil
 					},
 				},
@@ -140,10 +140,10 @@ var _ = g.Describe("[Conformance][templates] templateinstance security tests", f
 					by:              "checking editbygroupuser can create an object in a permitted namespace",
 					user:            editbygroupuser,
 					namespace:       cli.Namespace(),
-					objects:         []runtime.Object{dummyservice},
+					objects:         []runtime.Object{dummyroute},
 					expectCondition: templateapi.TemplateInstanceReady,
 					checkOK: func(namespace string) bool {
-						_, err := cli.AdminKubeClient().CoreV1().Services(namespace).Get(dummyservice.Name, metav1.GetOptions{})
+						_, err := cli.AdminRouteClient().Route().Routes(namespace).Get(dummyroute.Name, metav1.GetOptions{})
 						return err == nil
 					},
 				},
@@ -151,10 +151,10 @@ var _ = g.Describe("[Conformance][templates] templateinstance security tests", f
 					by:              "checking edituser can't create an object in a non-permitted namespace",
 					user:            edituser,
 					namespace:       "default",
-					objects:         []runtime.Object{dummyservice},
+					objects:         []runtime.Object{dummyroute},
 					expectCondition: templateapi.TemplateInstanceInstantiateFailure,
 					checkOK: func(namespace string) bool {
-						_, err := cli.AdminKubeClient().CoreV1().Services(namespace).Get(dummyservice.Name, metav1.GetOptions{})
+						_, err := cli.AdminRouteClient().Route().Routes(namespace).Get(dummyroute.Name, metav1.GetOptions{})
 						return err != nil && kerrors.IsNotFound(err)
 					},
 				},
@@ -162,10 +162,10 @@ var _ = g.Describe("[Conformance][templates] templateinstance security tests", f
 					by:              "checking editbygroupuser can't create an object in a non-permitted namespace",
 					user:            editbygroupuser,
 					namespace:       "default",
-					objects:         []runtime.Object{dummyservice},
+					objects:         []runtime.Object{dummyroute},
 					expectCondition: templateapi.TemplateInstanceInstantiateFailure,
 					checkOK: func(namespace string) bool {
-						_, err := cli.AdminKubeClient().CoreV1().Services(namespace).Get(dummyservice.Name, metav1.GetOptions{})
+						_, err := cli.AdminRouteClient().Route().Routes(namespace).Get(dummyroute.Name, metav1.GetOptions{})
 						return err != nil && kerrors.IsNotFound(err)
 					},
 				},
@@ -216,7 +216,7 @@ var _ = g.Describe("[Conformance][templates] templateinstance security tests", f
 			}
 
 			targetVersions := []schema.GroupVersion{storagev1.SchemeGroupVersion}
-			targetVersions = append(targetVersions, latest.Versions...)
+			targetVersions = append(targetVersions, legacyscheme.Scheme.PrioritizedVersionsAllGroups()...)
 
 			for _, test := range tests {
 				g.By(test.by)
@@ -255,7 +255,7 @@ var _ = g.Describe("[Conformance][templates] templateinstance security tests", f
 					},
 				}
 
-				err = templateapi.AddObjectsToTemplate(&templateinstance.Spec.Template, test.objects, targetVersions...)
+				err = addObjectsToTemplate(&templateinstance.Spec.Template, test.objects, targetVersions...)
 				o.Expect(err).NotTo(o.HaveOccurred())
 
 				templateinstance, err = cli.TemplateClient().Template().TemplateInstances(cli.Namespace()).Create(templateinstance)
@@ -270,7 +270,7 @@ var _ = g.Describe("[Conformance][templates] templateinstance security tests", f
 				})
 				o.Expect(err).NotTo(o.HaveOccurred())
 
-				o.Expect(templateinstance.HasCondition(test.expectCondition, kapi.ConditionTrue)).To(o.Equal(true))
+				o.Expect(templatecontroller.TemplateInstanceHasCondition(templateinstance, test.expectCondition, kapi.ConditionTrue)).To(o.Equal(true))
 				o.Expect(test.checkOK(test.namespace)).To(o.BeTrue())
 
 				foreground := metav1.DeletePropagationForeground

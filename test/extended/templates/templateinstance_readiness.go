@@ -9,14 +9,17 @@ import (
 	o "github.com/onsi/gomega"
 
 	"k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kapi "k8s.io/kubernetes/pkg/apis/core"
 
-	appsapi "github.com/openshift/origin/pkg/apps/apis/apps"
+	appsv1 "github.com/openshift/api/apps/v1"
+	appsutil "github.com/openshift/origin/pkg/apps/util"
 	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	templateapi "github.com/openshift/origin/pkg/template/apis/template"
+	templatecontroller "github.com/openshift/origin/pkg/template/controller"
 	exutil "github.com/openshift/origin/test/extended/util"
 )
 
@@ -48,7 +51,7 @@ var _ = g.Describe("[Conformance][templates] templateinstance readiness test", f
 			return false, err
 		}
 
-		dc, err := cli.AppsClient().Apps().DeploymentConfigs(cli.Namespace()).Get("cakephp-mysql-example", metav1.GetOptions{})
+		dc, err := cli.AppsClient().AppsV1().DeploymentConfigs(cli.Namespace()).Get("cakephp-mysql-example", metav1.GetOptions{})
 		if err != nil {
 			if kerrors.IsNotFound(err) {
 				err = nil
@@ -62,24 +65,24 @@ var _ = g.Describe("[Conformance][templates] templateinstance readiness test", f
 			return true, nil
 
 		case buildapi.BuildPhaseComplete:
-			var progressing, available *appsapi.DeploymentCondition
+			var progressing, available *appsv1.DeploymentCondition
 			for i, condition := range dc.Status.Conditions {
 				switch condition.Type {
-				case appsapi.DeploymentProgressing:
+				case appsv1.DeploymentProgressing:
 					progressing = &dc.Status.Conditions[i]
 
-				case appsapi.DeploymentAvailable:
+				case appsv1.DeploymentAvailable:
 					available = &dc.Status.Conditions[i]
 				}
 			}
 
 			if (progressing != nil &&
-				progressing.Status == kapi.ConditionTrue &&
-				progressing.Reason == appsapi.NewRcAvailableReason &&
+				progressing.Status == corev1.ConditionTrue &&
+				progressing.Reason == appsutil.NewRcAvailableReason &&
 				available != nil &&
-				available.Status == kapi.ConditionTrue) ||
+				available.Status == corev1.ConditionTrue) ||
 				(progressing != nil &&
-					progressing.Status == kapi.ConditionFalse) {
+					progressing.Status == corev1.ConditionFalse) {
 				return true, nil
 			}
 		}
@@ -87,10 +90,10 @@ var _ = g.Describe("[Conformance][templates] templateinstance readiness test", f
 		// the build or dc have not settled; the templateinstance must also
 		// indicate this
 
-		if templateinstance.HasCondition(templateapi.TemplateInstanceReady, kapi.ConditionTrue) {
+		if templatecontroller.TemplateInstanceHasCondition(templateinstance, templateapi.TemplateInstanceReady, kapi.ConditionTrue) {
 			return false, errors.New("templateinstance unexpectedly reported ready")
 		}
-		if templateinstance.HasCondition(templateapi.TemplateInstanceInstantiateFailure, kapi.ConditionTrue) {
+		if templatecontroller.TemplateInstanceHasCondition(templateinstance, templateapi.TemplateInstanceInstantiateFailure, kapi.ConditionTrue) {
 			return false, errors.New("templateinstance unexpectedly reported failure")
 		}
 
@@ -99,7 +102,11 @@ var _ = g.Describe("[Conformance][templates] templateinstance readiness test", f
 
 	g.Context("", func() {
 		g.BeforeEach(func() {
-			err := exutil.WaitForBuilderAccount(cli.KubeClient().Core().ServiceAccounts(cli.Namespace()))
+			g.By("waiting for default service account")
+			err := exutil.WaitForServiceAccount(cli.KubeClient().Core().ServiceAccounts(cli.Namespace()), "default")
+			o.Expect(err).NotTo(o.HaveOccurred())
+			g.By("waiting for builder service account")
+			err = exutil.WaitForServiceAccount(cli.KubeClient().Core().ServiceAccounts(cli.Namespace()), "builder")
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			err = cli.Run("create").Args("-f", templatefixture).Execute()
@@ -150,11 +157,11 @@ var _ = g.Describe("[Conformance][templates] templateinstance readiness test", f
 					return false, err
 				}
 
-				if templateinstance.HasCondition(templateapi.TemplateInstanceInstantiateFailure, kapi.ConditionTrue) {
+				if templatecontroller.TemplateInstanceHasCondition(templateinstance, templateapi.TemplateInstanceInstantiateFailure, kapi.ConditionTrue) {
 					return false, errors.New("templateinstance unexpectedly reported failure")
 				}
 
-				return templateinstance.HasCondition(templateapi.TemplateInstanceReady, kapi.ConditionTrue), nil
+				return templatecontroller.TemplateInstanceHasCondition(templateinstance, templateapi.TemplateInstanceReady, kapi.ConditionTrue), nil
 			})
 			if err != nil {
 				err := dumpObjectReadiness(cli, templateinstance)
@@ -212,11 +219,11 @@ var _ = g.Describe("[Conformance][templates] templateinstance readiness test", f
 					return false, err
 				}
 
-				if templateinstance.HasCondition(templateapi.TemplateInstanceReady, kapi.ConditionTrue) {
+				if templatecontroller.TemplateInstanceHasCondition(templateinstance, templateapi.TemplateInstanceReady, kapi.ConditionTrue) {
 					return false, errors.New("templateinstance unexpectedly reported ready")
 				}
 
-				return templateinstance.HasCondition(templateapi.TemplateInstanceInstantiateFailure, kapi.ConditionTrue), nil
+				return templatecontroller.TemplateInstanceHasCondition(templateinstance, templateapi.TemplateInstanceInstantiateFailure, kapi.ConditionTrue), nil
 			})
 			if err != nil {
 				err := dumpObjectReadiness(cli, templateinstance)

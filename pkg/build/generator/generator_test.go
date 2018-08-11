@@ -17,8 +17,10 @@ import (
 	kapi "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/fake"
 
+	"github.com/openshift/api/image"
 	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/build/apis/build/validation"
+	"github.com/openshift/origin/pkg/build/buildapihelpers"
 	mocks "github.com/openshift/origin/pkg/build/generator/test"
 	imageapi "github.com/openshift/origin/pkg/image/apis/image"
 )
@@ -447,7 +449,7 @@ func TestInstantiateWithImageTrigger(t *testing.T) {
 			if bc.Spec.Triggers[i].Type == buildapi.ImageChangeBuildTriggerType {
 				from := bc.Spec.Triggers[i].ImageChange.From
 				if from == nil {
-					from = buildapi.GetInputReference(bc.Spec.Strategy)
+					from = buildapihelpers.GetInputReference(bc.Spec.Strategy)
 				}
 				if bc.Spec.Triggers[i].ImageChange.LastTriggeredImageID != ("ref/" + from.Name) {
 					t.Errorf("%s: expected LastTriggeredImageID for trigger at %d (%+v) to be %s. Got: %s", tc.name, i, bc.Spec.Triggers[i].ImageChange.From, "ref/"+from.Name, bc.Spec.Triggers[i].ImageChange.LastTriggeredImageID)
@@ -610,7 +612,7 @@ func TestInstantiateWithMissingImageStream(t *testing.T) {
 	g := mockBuildGenerator(nil, nil, nil, nil, nil, nil, nil)
 	c := g.Client.(TestingClient)
 	c.GetImageStreamFunc = func(ctx context.Context, name string, options *metav1.GetOptions) (*imageapi.ImageStream, error) {
-		return nil, errors.NewNotFound(imageapi.Resource("imagestreams"), "testRepo")
+		return nil, errors.NewNotFound(image.Resource("imagestreams"), "testRepo")
 	}
 	g.Client = c
 

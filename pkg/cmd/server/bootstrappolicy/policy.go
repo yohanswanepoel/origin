@@ -23,19 +23,23 @@ import (
 	"k8s.io/kubernetes/pkg/apis/storage"
 	"k8s.io/kubernetes/plugin/pkg/auth/authorizer/rbac/bootstrappolicy"
 
+	oapps "github.com/openshift/api/apps"
+	"github.com/openshift/api/authorization"
+	"github.com/openshift/api/build"
+	"github.com/openshift/api/image"
+	"github.com/openshift/api/network"
+	"github.com/openshift/api/oauth"
+	"github.com/openshift/api/project"
+	"github.com/openshift/api/quota"
+	"github.com/openshift/api/route"
+	"github.com/openshift/api/security"
+	"github.com/openshift/api/template"
+	"github.com/openshift/api/user"
 	oapi "github.com/openshift/origin/pkg/api"
-	appsapi "github.com/openshift/origin/pkg/apps/apis/apps"
+	"github.com/openshift/origin/pkg/api/legacy"
 	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 	buildapi "github.com/openshift/origin/pkg/build/apis/build"
-	imageapi "github.com/openshift/origin/pkg/image/apis/image"
-	networkapi "github.com/openshift/origin/pkg/network/apis/network"
-	oauthapi "github.com/openshift/origin/pkg/oauth/apis/oauth"
-	projectapi "github.com/openshift/origin/pkg/project/apis/project"
-	quotaapi "github.com/openshift/origin/pkg/quota/apis/quota"
-	routeapi "github.com/openshift/origin/pkg/route/apis/route"
-	securityapi "github.com/openshift/origin/pkg/security/apis/security"
 	templateapi "github.com/openshift/origin/pkg/template/apis/template"
-	userapi "github.com/openshift/origin/pkg/user/apis/user"
 )
 
 const (
@@ -62,36 +66,36 @@ var (
 	networkingGroup            = "networking.k8s.io"
 	policyGroup                = policy.GroupName
 	rbacGroup                  = rbac.GroupName
-	securityGroup              = securityapi.GroupName
-	legacySecurityGroup        = securityapi.LegacyGroupName
 	storageGroup               = storage.GroupName
 	settingsGroup              = settings.GroupName
 	schedulingGroup            = "scheduling.k8s.io"
+	kAuthzGroup                = kauthorizationapi.GroupName
+	kAuthnGroup                = kauthenticationapi.GroupName
 
-	authzGroup          = authorizationapi.GroupName
-	kAuthzGroup         = kauthorizationapi.GroupName
-	kAuthnGroup         = kauthenticationapi.GroupName
-	legacyAuthzGroup    = authorizationapi.LegacyGroupName
-	buildGroup          = buildapi.GroupName
-	legacyBuildGroup    = buildapi.LegacyGroupName
-	deployGroup         = appsapi.GroupName
-	legacyDeployGroup   = appsapi.LegacyGroupName
-	imageGroup          = imageapi.GroupName
-	legacyImageGroup    = imageapi.LegacyGroupName
-	projectGroup        = projectapi.GroupName
-	legacyProjectGroup  = projectapi.LegacyGroupName
-	quotaGroup          = quotaapi.GroupName
-	legacyQuotaGroup    = quotaapi.LegacyGroupName
-	routeGroup          = routeapi.GroupName
-	legacyRouteGroup    = routeapi.LegacyGroupName
-	templateGroup       = templateapi.GroupName
-	legacyTemplateGroup = templateapi.LegacyGroupName
-	userGroup           = userapi.GroupName
-	legacyUserGroup     = userapi.LegacyGroupName
-	oauthGroup          = oauthapi.GroupName
-	legacyOauthGroup    = oauthapi.LegacyGroupName
-	networkGroup        = networkapi.GroupName
-	legacyNetworkGroup  = networkapi.LegacyGroupName
+	deployGroup         = oapps.GroupName
+	authzGroup          = authorization.GroupName
+	buildGroup          = build.GroupName
+	imageGroup          = image.GroupName
+	networkGroup        = network.GroupName
+	oauthGroup          = oauth.GroupName
+	projectGroup        = project.GroupName
+	quotaGroup          = quota.GroupName
+	routeGroup          = route.GroupName
+	securityGroup       = security.GroupName
+	templateGroup       = template.GroupName
+	userGroup           = user.GroupName
+	legacyAuthzGroup    = legacy.GroupName
+	legacyBuildGroup    = legacy.GroupName
+	legacyDeployGroup   = legacy.GroupName
+	legacyImageGroup    = legacy.GroupName
+	legacyProjectGroup  = legacy.GroupName
+	legacyQuotaGroup    = legacy.GroupName
+	legacyRouteGroup    = legacy.GroupName
+	legacyTemplateGroup = legacy.GroupName
+	legacyUserGroup     = legacy.GroupName
+	legacyOauthGroup    = legacy.GroupName
+	legacyNetworkGroup  = legacy.GroupName
+	legacySecurityGroup = legacy.GroupName
 )
 
 func GetOpenshiftBootstrapClusterRoles() []rbacv1.ClusterRole {
@@ -131,35 +135,46 @@ func GetOpenshiftBootstrapClusterRoles() []rbacv1.ClusterRole {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: ClusterReaderRoleName,
 			},
+			AggregationRule: &rbacv1.AggregationRule{
+				ClusterRoleSelectors: []metav1.LabelSelector{
+					{
+						MatchLabels: map[string]string{"rbac.authorization.k8s.io/aggregate-to-cluster-reader": "true"},
+					},
+					{
+						MatchLabels: map[string]string{"rbac.authorization.k8s.io/aggregate-to-view": "true"},
+					},
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   AggregatedClusterReaderRoleName,
+				Labels: map[string]string{"rbac.authorization.k8s.io/aggregate-to-cluster-reader": "true"},
+			},
 			Rules: []rbacv1.PolicyRule{
-				rbacv1helpers.NewRule(read...).Groups(kapiGroup).Resources("bindings", "componentstatuses", "configmaps", "endpoints", "events", "limitranges",
-					"namespaces", "namespaces/status", "nodes", "nodes/status", "persistentvolumeclaims", "persistentvolumeclaims/status", "persistentvolumes",
-					"persistentvolumes/status", "pods", "pods/binding", "pods/eviction", "pods/log", "pods/status", "podtemplates", "replicationcontrollers", "replicationcontrollers/scale",
-					"replicationcontrollers/status", "resourcequotas", "resourcequotas/status", "securitycontextconstraints", "serviceaccounts", "services",
-					"services/status").RuleOrDie(),
+				rbacv1helpers.NewRule(read...).Groups(kapiGroup).Resources("componentstatuses", "nodes", "nodes/status", "persistentvolumeclaims/status", "persistentvolumes",
+					"persistentvolumes/status", "pods/binding", "pods/eviction", "podtemplates", "securitycontextconstraints", "services/status").RuleOrDie(),
 
 				rbacv1helpers.NewRule(read...).Groups(admissionRegistrationGroup).Resources("mutatingwebhookconfigurations", "validatingwebhookconfigurations").RuleOrDie(),
 
-				rbacv1helpers.NewRule(read...).Groups(appsGroup).Resources("statefulsets", "statefulsets/scale", "statefulsets/status", "deployments", "deployments/scale", "deployments/status", "controllerrevisions", "daemonsets", "daemonsets/status", "replicasets", "replicasets/status", "replicasets/scale").RuleOrDie(),
+				rbacv1helpers.NewRule(read...).Groups(appsGroup).Resources("statefulsets/status", "deployments/status", "controllerrevisions", "daemonsets/status",
+					"replicasets/status").RuleOrDie(),
 
 				rbacv1helpers.NewRule(read...).Groups(apiExtensionsGroup).Resources("customresourcedefinitions", "customresourcedefinitions/status").RuleOrDie(),
 
 				rbacv1helpers.NewRule(read...).Groups(apiRegistrationGroup).Resources("apiservices", "apiservices/status").RuleOrDie(),
 
-				rbacv1helpers.NewRule(read...).Groups(autoscalingGroup).Resources("horizontalpodautoscalers", "horizontalpodautoscalers/status").RuleOrDie(),
+				rbacv1helpers.NewRule(read...).Groups(autoscalingGroup).Resources("horizontalpodautoscalers/status").RuleOrDie(),
 
-				rbacv1helpers.NewRule(read...).Groups(batchGroup).Resources("jobs", "jobs/status", "cronjobs", "cronjobs/status").RuleOrDie(),
+				rbacv1helpers.NewRule(read...).Groups(batchGroup).Resources("jobs/status", "cronjobs/status").RuleOrDie(),
 
-				rbacv1helpers.NewRule(read...).Groups(extensionsGroup).Resources("daemonsets", "daemonsets/status", "deployments", "deployments/scale",
-					"deployments/status", "horizontalpodautoscalers", "horizontalpodautoscalers/status", "ingresses", "ingresses/status", "jobs", "jobs/status",
-					"networkpolicies", "podsecuritypolicies", "replicasets", "replicasets/scale", "replicasets/status", "replicationcontrollers",
-					"replicationcontrollers/scale", "storageclasses", "thirdpartyresources").RuleOrDie(),
+				rbacv1helpers.NewRule(read...).Groups(extensionsGroup).Resources("daemonsets/status", "deployments/status", "horizontalpodautoscalers",
+					"horizontalpodautoscalers/status", "ingresses/status", "jobs", "jobs/status", "podsecuritypolicies", "replicasets/status", "replicationcontrollers",
+					"storageclasses", "thirdpartyresources").RuleOrDie(),
 
 				rbacv1helpers.NewRule(read...).Groups(eventsGroup).Resources("events").RuleOrDie(),
 
-				rbacv1helpers.NewRule(read...).Groups(networkingGroup).Resources("networkpolicies").RuleOrDie(),
-
-				rbacv1helpers.NewRule(read...).Groups(policyGroup).Resources("podsecuritypolicies", "poddisruptionbudgets", "poddisruptionbudgets/status").RuleOrDie(),
+				rbacv1helpers.NewRule(read...).Groups(policyGroup).Resources("podsecuritypolicies", "poddisruptionbudgets/status").RuleOrDie(),
 
 				rbacv1helpers.NewRule(read...).Groups(rbacGroup).Resources("roles", "rolebindings", "clusterroles", "clusterrolebindings").RuleOrDie(),
 
@@ -169,45 +184,46 @@ func GetOpenshiftBootstrapClusterRoles() []rbacv1.ClusterRole {
 
 				rbacv1helpers.NewRule(read...).Groups(schedulingGroup).Resources("priorityclasses").RuleOrDie(),
 
-				rbacv1helpers.NewRule(read...).Groups(certificatesGroup).Resources("certificatesigningrequests", "certificatesigningrequests/approval", "certificatesigningrequests/status").RuleOrDie(),
+				rbacv1helpers.NewRule(read...).Groups(certificatesGroup).Resources("certificatesigningrequests", "certificatesigningrequests/approval",
+					"certificatesigningrequests/status").RuleOrDie(),
 
-				rbacv1helpers.NewRule(read...).Groups(authzGroup, legacyAuthzGroup).Resources("clusterroles", "clusterrolebindings", "roles", "rolebindings", "rolebindingrestrictions").RuleOrDie(),
+				rbacv1helpers.NewRule(read...).Groups(authzGroup, legacyAuthzGroup).Resources("clusterroles", "clusterrolebindings", "roles", "rolebindings",
+					"rolebindingrestrictions").RuleOrDie(),
 
-				rbacv1helpers.NewRule(read...).Groups(buildGroup, legacyBuildGroup).Resources("builds", "builds/details", "buildconfigs", "buildconfigs/webhooks", "builds/log").RuleOrDie(),
+				rbacv1helpers.NewRule(read...).Groups(buildGroup, legacyBuildGroup).Resources("builds/details").RuleOrDie(),
 
-				rbacv1helpers.NewRule(read...).Groups(deployGroup, legacyDeployGroup).Resources("deploymentconfigs", "deploymentconfigs/scale", "deploymentconfigs/log",
-					"deploymentconfigs/status").RuleOrDie(),
-
-				rbacv1helpers.NewRule(read...).Groups(imageGroup, legacyImageGroup).Resources("images", "imagesignatures", "imagestreams", "imagestreamtags", "imagestreamimages",
-					"imagestreams/status").RuleOrDie(),
+				rbacv1helpers.NewRule(read...).Groups(imageGroup, legacyImageGroup).Resources("images", "imagesignatures").RuleOrDie(),
 				// pull images
 				rbacv1helpers.NewRule("get").Groups(imageGroup, legacyImageGroup).Resources("imagestreams/layers").RuleOrDie(),
 
 				rbacv1helpers.NewRule(read...).Groups(oauthGroup, legacyOauthGroup).Resources("oauthclientauthorizations").RuleOrDie(),
 
-				rbacv1helpers.NewRule(read...).Groups(projectGroup, legacyProjectGroup).Resources("projectrequests", "projects").RuleOrDie(),
+				// "get" comes in from aggregate-to-view role
+				rbacv1helpers.NewRule("list", "watch").Groups(projectGroup, legacyProjectGroup).Resources("projects").RuleOrDie(),
 
-				rbacv1helpers.NewRule(read...).Groups(quotaGroup, legacyQuotaGroup).Resources("appliedclusterresourcequotas", "clusterresourcequotas", "clusterresourcequotas/status").RuleOrDie(),
+				rbacv1helpers.NewRule(read...).Groups(projectGroup, legacyProjectGroup).Resources("projectrequests").RuleOrDie(),
 
-				rbacv1helpers.NewRule(read...).Groups(routeGroup, legacyRouteGroup).Resources("routes", "routes/status").RuleOrDie(),
+				rbacv1helpers.NewRule(read...).Groups(quotaGroup, legacyQuotaGroup).Resources("clusterresourcequotas", "clusterresourcequotas/status").RuleOrDie(),
 
-				rbacv1helpers.NewRule(read...).Groups(networkGroup, legacyNetworkGroup).Resources("clusternetworks", "egressnetworkpolicies", "hostsubnets", "netnamespaces").RuleOrDie(),
+				rbacv1helpers.NewRule(read...).Groups(networkGroup, legacyNetworkGroup).Resources("clusternetworks", "egressnetworkpolicies", "hostsubnets",
+					"netnamespaces").RuleOrDie(),
 
 				rbacv1helpers.NewRule(read...).Groups(securityGroup, legacySecurityGroup).Resources("securitycontextconstraints").RuleOrDie(),
 				rbacv1helpers.NewRule(read...).Groups(securityGroup).Resources("rangeallocations").RuleOrDie(),
 
-				rbacv1helpers.NewRule(read...).Groups(templateGroup, legacyTemplateGroup).Resources("templates", "templateconfigs", "processedtemplates", "templateinstances").RuleOrDie(),
 				rbacv1helpers.NewRule(read...).Groups(templateGroup, legacyTemplateGroup).Resources("brokertemplateinstances", "templateinstances/status").RuleOrDie(),
 
 				rbacv1helpers.NewRule(read...).Groups(userGroup, legacyUserGroup).Resources("groups", "identities", "useridentitymappings", "users").RuleOrDie(),
 
 				// permissions to check access.  These creates are non-mutating
-				rbacv1helpers.NewRule("create").Groups(authzGroup, legacyAuthzGroup).Resources("localresourceaccessreviews", "localsubjectaccessreviews", "resourceaccessreviews",
-					"selfsubjectrulesreviews", "subjectrulesreviews", "subjectaccessreviews").RuleOrDie(),
-				rbacv1helpers.NewRule("create").Groups(kAuthzGroup).Resources("selfsubjectaccessreviews", "subjectaccessreviews", "selfsubjectrulesreviews", "localsubjectaccessreviews").RuleOrDie(),
+				rbacv1helpers.NewRule("create").Groups(authzGroup, legacyAuthzGroup).Resources("localresourceaccessreviews", "localsubjectaccessreviews",
+					"resourceaccessreviews", "selfsubjectrulesreviews", "subjectrulesreviews", "subjectaccessreviews").RuleOrDie(),
+				rbacv1helpers.NewRule("create").Groups(kAuthzGroup).Resources("selfsubjectaccessreviews", "subjectaccessreviews", "selfsubjectrulesreviews",
+					"localsubjectaccessreviews").RuleOrDie(),
 				rbacv1helpers.NewRule("create").Groups(kAuthnGroup).Resources("tokenreviews").RuleOrDie(),
 				// permissions to check PSP, these creates are non-mutating
-				rbacv1helpers.NewRule("create").Groups(securityGroup, legacySecurityGroup).Resources("podsecuritypolicysubjectreviews", "podsecuritypolicyselfsubjectreviews", "podsecuritypolicyreviews").RuleOrDie(),
+				rbacv1helpers.NewRule("create").Groups(securityGroup, legacySecurityGroup).Resources("podsecuritypolicysubjectreviews",
+					"podsecuritypolicyselfsubjectreviews", "podsecuritypolicyreviews").RuleOrDie(),
 				// Allow read access to node metrics
 				rbacv1helpers.NewRule("get").Groups(kapiGroup).Resources("nodes/"+NodeMetricsSubresource, "nodes/"+NodeSpecSubresource).RuleOrDie(),
 				// Allow read access to stats
@@ -215,10 +231,6 @@ func GetOpenshiftBootstrapClusterRoles() []rbacv1.ClusterRole {
 				rbacv1helpers.NewRule("get", "create").Groups(kapiGroup).Resources("nodes/" + NodeStatsSubresource).RuleOrDie(),
 
 				rbacv1helpers.NewRule("get").URLs(rbac.NonResourceAll).RuleOrDie(),
-
-				// backwards compatibility
-				rbacv1helpers.NewRule(read...).Groups(buildGroup, legacyBuildGroup).Resources("buildlogs").RuleOrDie(),
-				rbacv1helpers.NewRule(read...).Groups(kapiGroup).Resources("resourcequotausages").RuleOrDie(),
 			},
 		},
 		{
@@ -581,7 +593,7 @@ func GetOpenshiftBootstrapClusterRoles() []rbacv1.ClusterRole {
 				Name: RegistryRoleName,
 			},
 			Rules: []rbacv1.PolicyRule{
-				rbacv1helpers.NewRule("list").Groups(kapiGroup).Resources("limitranges", "resourcequotas").RuleOrDie(),
+				rbacv1helpers.NewRule("list").Groups(kapiGroup).Resources("limitranges", "resourcequotas", "imagestreams").RuleOrDie(),
 
 				rbacv1helpers.NewRule("get", "delete").Groups(imageGroup, legacyImageGroup).Resources("images", "imagestreamtags").RuleOrDie(),
 				rbacv1helpers.NewRule("get").Groups(imageGroup, legacyImageGroup).Resources("imagestreamimages", "imagestreams/secrets").RuleOrDie(),
@@ -1010,8 +1022,9 @@ func GetBootstrapNamespaceRoleBindings() map[string][]rbacv1.RoleBinding {
 
 func GetBootstrapClusterRolesToAggregate() map[string]string {
 	return map[string]string{
-		AdminRoleName: AggregatedAdminRoleName,
-		EditRoleName:  AggregatedEditRoleName,
-		ViewRoleName:  AggregatedViewRoleName,
+		AdminRoleName:         AggregatedAdminRoleName,
+		EditRoleName:          AggregatedEditRoleName,
+		ViewRoleName:          AggregatedViewRoleName,
+		ClusterReaderRoleName: AggregatedClusterReaderRoleName,
 	}
 }

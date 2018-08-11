@@ -205,120 +205,6 @@ func TestValidateClusterNetwork(t *testing.T) {
 	}
 }
 
-func TestSetDefaultClusterNetwork(t *testing.T) {
-	defaultClusterNetwork := networkapi.ClusterNetwork{
-		ObjectMeta:       metav1.ObjectMeta{Name: networkapi.ClusterNetworkDefault},
-		ClusterNetworks:  []networkapi.ClusterNetworkEntry{{CIDR: "10.20.0.0/16", HostSubnetLength: 8}},
-		ServiceNetwork:   "172.30.0.0/16",
-		PluginName:       "redhat/openshift-ovs-multitenant",
-		Network:          "10.20.0.0/16",
-		HostSubnetLength: 8,
-	}
-	SetDefaultClusterNetwork(defaultClusterNetwork)
-
-	tests := []struct {
-		name           string
-		cn             *networkapi.ClusterNetwork
-		expectedErrors int
-	}{
-		{
-			name:           "Good one",
-			cn:             &defaultClusterNetwork,
-			expectedErrors: 0,
-		},
-		{
-			name: "Wrong Network",
-			cn: &networkapi.ClusterNetwork{
-				ObjectMeta:       metav1.ObjectMeta{Name: networkapi.ClusterNetworkDefault},
-				ClusterNetworks:  []networkapi.ClusterNetworkEntry{{CIDR: "10.30.0.0/16", HostSubnetLength: 8}},
-				ServiceNetwork:   "172.30.0.0/16",
-				PluginName:       "redhat/openshift-ovs-multitenant",
-				Network:          "10.30.0.0/16",
-				HostSubnetLength: 8,
-			},
-			expectedErrors: 2,
-		},
-		{
-			name: "Additional Network",
-			cn: &networkapi.ClusterNetwork{
-				ObjectMeta:       metav1.ObjectMeta{Name: networkapi.ClusterNetworkDefault},
-				ClusterNetworks:  []networkapi.ClusterNetworkEntry{{CIDR: "10.20.0.0/16", HostSubnetLength: 8}, {CIDR: "10.30.0.0/16", HostSubnetLength: 8}},
-				ServiceNetwork:   "172.30.0.0/16",
-				PluginName:       "redhat/openshift-ovs-multitenant",
-				Network:          "10.20.0.0/16",
-				HostSubnetLength: 8,
-			},
-			expectedErrors: 1,
-		},
-		{
-			name: "Wrong HostSubnetLength",
-			cn: &networkapi.ClusterNetwork{
-				ObjectMeta:       metav1.ObjectMeta{Name: networkapi.ClusterNetworkDefault},
-				ClusterNetworks:  []networkapi.ClusterNetworkEntry{{CIDR: "10.20.0.0/16", HostSubnetLength: 9}},
-				ServiceNetwork:   "172.30.0.0/16",
-				PluginName:       "redhat/openshift-ovs-multitenant",
-				Network:          "10.20.0.0/16",
-				HostSubnetLength: 9,
-			},
-			expectedErrors: 2,
-		},
-		{
-			name: "Wrong ServiceNetwork",
-			cn: &networkapi.ClusterNetwork{
-				ObjectMeta:       metav1.ObjectMeta{Name: networkapi.ClusterNetworkDefault},
-				ClusterNetworks:  []networkapi.ClusterNetworkEntry{{CIDR: "10.20.0.0/16", HostSubnetLength: 8}},
-				ServiceNetwork:   "172.20.0.0/16",
-				PluginName:       "redhat/openshift-ovs-multitenant",
-				Network:          "10.20.0.0/16",
-				HostSubnetLength: 8,
-			},
-			expectedErrors: 1,
-		},
-		{
-			name: "Wrong PluginName",
-			cn: &networkapi.ClusterNetwork{
-				ObjectMeta:       metav1.ObjectMeta{Name: networkapi.ClusterNetworkDefault},
-				ClusterNetworks:  []networkapi.ClusterNetworkEntry{{CIDR: "10.20.0.0/16", HostSubnetLength: 8}},
-				ServiceNetwork:   "172.30.0.0/16",
-				PluginName:       "redhat/openshift-ovs-subnet",
-				Network:          "10.20.0.0/16",
-				HostSubnetLength: 8,
-			},
-			expectedErrors: 1,
-		},
-		{
-			name: "Wrong legacy Network",
-			cn: &networkapi.ClusterNetwork{
-				ObjectMeta:       metav1.ObjectMeta{Name: networkapi.ClusterNetworkDefault},
-				ClusterNetworks:  []networkapi.ClusterNetworkEntry{{CIDR: "10.20.0.0/16", HostSubnetLength: 8}},
-				ServiceNetwork:   "172.30.0.0/16",
-				PluginName:       "redhat/openshift-ovs-multitenant",
-				Network:          "10.30.0.0/16",
-				HostSubnetLength: 8,
-			},
-			expectedErrors: 2,
-		},
-		{
-			name: "Missing legacy fields",
-			cn: &networkapi.ClusterNetwork{
-				ObjectMeta:      metav1.ObjectMeta{Name: networkapi.ClusterNetworkDefault},
-				ClusterNetworks: []networkapi.ClusterNetworkEntry{{CIDR: "10.20.0.0/16", HostSubnetLength: 8}},
-				ServiceNetwork:  "172.30.0.0/16",
-				PluginName:      "redhat/openshift-ovs-multitenant",
-			},
-			expectedErrors: 4,
-		},
-	}
-
-	for _, tc := range tests {
-		errs := ValidateClusterNetwork(tc.cn)
-
-		if len(errs) != tc.expectedErrors {
-			t.Errorf("Test case %s expected %d error(s), got %d. %v", tc.name, tc.expectedErrors, len(errs), errs)
-		}
-	}
-}
-
 func TestValidateHostSubnet(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -404,6 +290,39 @@ func TestValidateHostSubnet(t *testing.T) {
 				},
 			},
 			expectedErrors: 2,
+		},
+		{
+			name: "Good one with EgressCIDRs",
+			hs: &networkapi.HostSubnet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "abc.def.com",
+				},
+				Host:   "abc.def.com",
+				HostIP: "10.20.30.40",
+				Subnet: "8.8.8.0/24",
+				EgressCIDRs: []string{
+					"192.168.1.99/32",
+					"192.168.2.0/24",
+				},
+			},
+			expectedErrors: 0,
+		},
+		{
+			name: "Malformed EgressCIDRs",
+			hs: &networkapi.HostSubnet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "abc.def.com",
+				},
+				Host:   "abc.def.com",
+				HostIP: "10.20.30.40",
+				Subnet: "8.8.8.0/24",
+				EgressCIDRs: []string{
+					"192.168.1.99",
+					"bob/32",
+					"1234::5678/64",
+				},
+			},
+			expectedErrors: 3,
 		},
 		{
 			name: "IPv6 subnet",

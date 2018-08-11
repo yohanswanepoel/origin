@@ -64,7 +64,7 @@ var _ = g.Describe("[Feature:Builds][Slow] builds with a context directory", fun
 				// oc.KubeFramework().WaitForAnEndpoint currently will wait forever;  for now, prefacing with our WaitForADeploymentToComplete,
 				// which does have a timeout, since in most cases a failure in the service coming up stems from a failed deployment
 				g.By("waiting for a deployment")
-				err = exutil.WaitForDeploymentConfig(oc.KubeClient(), oc.AppsClient().Apps(), oc.Namespace(), dcName, 1, true, oc)
+				err = exutil.WaitForDeploymentConfig(oc.KubeClient(), oc.AppsClient().AppsV1(), oc.Namespace(), dcName, 1, true, oc)
 				o.Expect(err).NotTo(o.HaveOccurred())
 
 				g.By("waiting for endpoint")
@@ -98,14 +98,20 @@ var _ = g.Describe("[Feature:Builds][Slow] builds with a context directory", fun
 
 		g.Describe("docker context directory build", func() {
 			g.It(fmt.Sprintf("should docker build an application using a context directory"), func() {
+				g.By("initializing local repo")
+				repo, err := exutil.NewGitRepo("contextdir")
+				o.Expect(err).NotTo(o.HaveOccurred())
+				defer repo.Remove()
+				err = repo.AddAndCommit("2.3/Dockerfile", "FROM busybox")
+				o.Expect(err).NotTo(o.HaveOccurred())
 
 				exutil.CheckOpenShiftNamespaceImageStreams(oc)
 				g.By(fmt.Sprintf("calling oc create -f %q", appFixture))
-				err := oc.Run("create").Args("-f", appFixture).Execute()
+				err = oc.Run("create").Args("-f", appFixture).Execute()
 				o.Expect(err).NotTo(o.HaveOccurred())
 
 				g.By("starting a build")
-				err = oc.Run("start-build").Args(dockerBuildConfigName).Execute()
+				err = oc.Run("start-build").Args(dockerBuildConfigName, "--from-repo", repo.RepoPath).Execute()
 				o.Expect(err).NotTo(o.HaveOccurred())
 
 				// build will fail if we don't use the right context dir because there won't be a dockerfile present.

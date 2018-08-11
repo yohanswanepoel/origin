@@ -20,6 +20,9 @@ var _ = g.Describe("[image_ecosystem][mysql][Slow] openshift mysql image", func(
 	g.Context("", func() {
 		g.BeforeEach(func() {
 			exutil.DumpDockerInfo()
+			g.By("waiting for default service account")
+			err := exutil.WaitForServiceAccount(oc.KubeClient().Core().ServiceAccounts(oc.Namespace()), "default")
+			o.Expect(err).NotTo(o.HaveOccurred())
 		})
 
 		g.AfterEach(func() {
@@ -42,7 +45,7 @@ var _ = g.Describe("[image_ecosystem][mysql][Slow] openshift mysql image", func(
 
 				// oc.KubeFramework().WaitForAnEndpoint currently will wait forever;  for now, prefacing with our WaitForADeploymentToComplete,
 				// which does have a timeout, since in most cases a failure in the service coming up stems from a failed deployment
-				err = exutil.WaitForDeploymentConfig(oc.KubeClient(), oc.AppsClient().Apps(), oc.Namespace(), "mysql", 1, true, oc)
+				err = exutil.WaitForDeploymentConfig(oc.KubeClient(), oc.AppsClient().AppsV1(), oc.Namespace(), "mysql", 1, true, oc)
 				o.Expect(err).NotTo(o.HaveOccurred())
 
 				g.By("expecting the mysql service get endpoints")

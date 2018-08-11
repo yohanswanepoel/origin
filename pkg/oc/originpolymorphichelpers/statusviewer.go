@@ -6,9 +6,9 @@ import (
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
 	"k8s.io/kubernetes/pkg/kubectl/polymorphichelpers"
 
-	appsapi "github.com/openshift/origin/pkg/apps/apis/apps"
-	appsclient "github.com/openshift/origin/pkg/apps/generated/internalclientset"
-	deploymentcmd "github.com/openshift/origin/pkg/oc/cli/deploymentconfigs"
+	appsapi "github.com/openshift/api/apps"
+	appstypedclient "github.com/openshift/client-go/apps/clientset/versioned/typed/apps/v1"
+	deploymentcmd "github.com/openshift/origin/pkg/oc/originpolymorphichelpers/deploymentconfigs"
 )
 
 func NewStatusViewerFn(delegate polymorphichelpers.StatusViewerFunc) polymorphichelpers.StatusViewerFunc {
@@ -18,7 +18,7 @@ func NewStatusViewerFn(delegate polymorphichelpers.StatusViewerFunc) polymorphic
 			if err != nil {
 				return nil, err
 			}
-			appsClient, err := appsclient.NewForConfig(config)
+			appsClient, err := appstypedclient.NewForConfig(config)
 			if err != nil {
 				return nil, err
 			}

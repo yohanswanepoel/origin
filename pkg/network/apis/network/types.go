@@ -22,6 +22,7 @@ type ClusterNetwork struct {
 	HostSubnetLength uint32
 	ServiceNetwork   string
 	PluginName       string
+	VXLANPort        *uint32
 }
 
 type ClusterNetworkEntry struct {
@@ -51,7 +52,8 @@ type HostSubnet struct {
 	HostIP string
 	Subnet string
 
-	EgressIPs []string
+	EgressIPs   []string
+	EgressCIDRs []string
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

@@ -26,6 +26,7 @@ import (
 	buildapiv1 "github.com/openshift/api/build/v1"
 	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/build/apis/build/validation"
+	"github.com/openshift/origin/pkg/build/buildapihelpers"
 	builddefaults "github.com/openshift/origin/pkg/build/controller/build/defaults"
 	buildoverrides "github.com/openshift/origin/pkg/build/controller/build/overrides"
 	"github.com/openshift/origin/pkg/build/controller/common"
@@ -52,7 +53,7 @@ func TestHandleBuild(t *testing.T) {
 	build := func(phase buildapi.BuildPhase) *buildapi.Build {
 		b := dockerStrategy(mockBuild(phase, buildapi.BuildOutput{}))
 		if phase != buildapi.BuildPhaseNew {
-			podName := buildapi.GetBuildPodName(b)
+			podName := buildapihelpers.GetBuildPodName(b)
 			common.SetBuildPodNameAnnotation(b, podName)
 		}
 		return b
@@ -325,14 +326,12 @@ func TestHandleBuild(t *testing.T) {
 			} else {
 				kubeClient = fakeKubeExternalClientSet()
 			}
-			podDeleted := false
 			podCreated := false
 			kubeClient.(*kexternalclientfake.Clientset).PrependReactor("delete", "pods",
 				func(action clientgotesting.Action) (bool, runtime.Object, error) {
 					if tc.errorOnPodDelete {
 						return true, nil, fmt.Errorf("error")
 					}
-					podDeleted = true
 					return true, nil, nil
 				})
 			kubeClient.(*kexternalclientfake.Clientset).PrependReactor("create", "pods",
@@ -433,7 +432,7 @@ func TestCreateBuildPod(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 		return
 	}
-	podName := buildapi.GetBuildPodName(build)
+	podName := buildapihelpers.GetBuildPodName(build)
 	// Validate update
 	expected := &buildUpdate{}
 	expected.setPodNameAnnotation(podName)
@@ -458,7 +457,7 @@ func TestCreateBuildPodWithImageStreamOutput(t *testing.T) {
 	bc := newFakeBuildController(nil, imageClient, nil, nil)
 	defer bc.stop()
 	build := dockerStrategy(mockBuild(buildapi.BuildPhaseNew, buildapi.BuildOutput{To: imageStreamRef, PushSecret: &kapi.LocalObjectReference{}}))
-	podName := buildapi.GetBuildPodName(build)
+	podName := buildapihelpers.GetBuildPodName(build)
 
 	update, err := bc.createBuildPod(build)
 	if err != nil {
@@ -570,7 +569,7 @@ func TestCreateBuildPodWithExistingRelatedPod(t *testing.T) {
 
 	existingPod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      buildapi.GetBuildPodName(build),
+			Name:      buildapihelpers.GetBuildPodName(build),
 			Namespace: build.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				{
@@ -602,7 +601,7 @@ func TestCreateBuildPodWithExistingRelatedPod(t *testing.T) {
 	expected.setPhase(buildapi.BuildPhasePending)
 	expected.setReason("")
 	expected.setMessage("")
-	expected.setPodNameAnnotation(buildapi.GetBuildPodName(build))
+	expected.setPodNameAnnotation(buildapihelpers.GetBuildPodName(build))
 	validateUpdate(t, "create build pod with existing related pod error", expected, update)
 }
 
@@ -611,7 +610,7 @@ func TestCreateBuildPodWithExistingUnrelatedPod(t *testing.T) {
 
 	existingPod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      buildapi.GetBuildPodName(build),
+			Name:      buildapihelpers.GetBuildPodName(build),
 			Namespace: build.Namespace,
 		},
 	}
@@ -938,12 +937,12 @@ func TestSetBuildCompletionTimestampAndDuration(t *testing.T) {
 			switch test.expected.duration {
 			case &greaterThanZeroLessThanSinceStartTime:
 				sinceStart := now.Rfc3339Copy().Time.Sub(startTime.Rfc3339Copy().Time)
-				if !(*update.duration > 0) || !(*update.duration <= sinceStart) {
+				if *update.duration <= 0 || *update.duration > sinceStart {
 					t.Errorf("%s: duration (%v) not within expected range (%v - %v)", test.name, update.duration, 0, sinceStart)
 					continue
 				}
 			case &atLeastOneHour:
-				if !(*update.duration >= time.Hour) {
+				if *update.duration < time.Hour {
 					t.Errorf("%s: duration (%v) is not at least one hour", test.name, update.duration)
 					continue
 				}
@@ -1289,7 +1288,7 @@ func (f *fakeRunPolicy) Handles(buildapi.BuildRunPolicy) bool {
 
 func mockBuildPod(build *buildapi.Build) *v1.Pod {
 	pod := &v1.Pod{}
-	pod.Name = buildapi.GetBuildPodName(build)
+	pod.Name = buildapihelpers.GetBuildPodName(build)
 	pod.Namespace = build.Namespace
 	pod.Annotations = map[string]string{}
 	pod.Annotations[buildapi.BuildAnnotation] = build.Name

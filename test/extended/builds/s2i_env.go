@@ -32,8 +32,11 @@ var _ = g.Describe("[Feature:Builds][Slow] s2i build with environment file in so
 		})
 
 		g.JustBeforeEach(func() {
+			g.By("waiting for default service account")
+			err := exutil.WaitForServiceAccount(oc.KubeClient().Core().ServiceAccounts(oc.Namespace()), "default")
+			o.Expect(err).NotTo(o.HaveOccurred())
 			g.By("waiting for builder service account")
-			err := exutil.WaitForBuilderAccount(oc.AdminKubeClient().Core().ServiceAccounts(oc.Namespace()))
+			err = exutil.WaitForServiceAccount(oc.KubeClient().Core().ServiceAccounts(oc.Namespace()), "builder")
 			o.Expect(err).NotTo(o.HaveOccurred())
 		})
 
@@ -56,7 +59,7 @@ var _ = g.Describe("[Feature:Builds][Slow] s2i build with environment file in so
 				o.Expect(err).NotTo(o.HaveOccurred())
 
 				g.By("starting a test build")
-				path := exutil.FixturePath("testdata", "builds", "sti-environment-build-app")
+				path := exutil.FixturePath("testdata", "builds", "s2i-environment-build-app")
 				br, _ := exutil.StartBuildAndWait(oc, "test", "--from-dir", path)
 				br.AssertSuccess()
 

@@ -55,6 +55,7 @@ oc-adm-diagnostics-metricsapiproxy.1
 oc-adm-diagnostics-networkcheck.1
 oc-adm-diagnostics-nodedefinitions.1
 oc-adm-diagnostics-routecertificatevalidation.1
+oc-adm-diagnostics-securitycontextconstraints.1
 oc-adm-diagnostics-serviceexternalips.1
 oc-adm-diagnostics-unitstatus.1
 oc-adm-diagnostics.1
@@ -188,10 +189,8 @@ oc-create-useridentitymapping.1
 oc-create.1
 oc-debug.1
 oc-delete.1
-oc-deploy.1
 oc-describe.1
 oc-edit.1
-oc-env.1
 oc-ex-build-chain.1
 oc-ex-config-patch.1
 oc-ex-config.1
@@ -213,6 +212,7 @@ oc-ex-diagnostics-metricsapiproxy.1
 oc-ex-diagnostics-networkcheck.1
 oc-ex-diagnostics-nodedefinitions.1
 oc-ex-diagnostics-routecertificatevalidation.1
+oc-ex-diagnostics-securitycontextconstraints.1
 oc-ex-diagnostics-serviceexternalips.1
 oc-ex-diagnostics-unitstatus.1
 oc-ex-diagnostics.1
@@ -229,6 +229,7 @@ oc-expose.1
 oc-extract.1
 oc-get.1
 oc-idle.1
+oc-image-append.1
 oc-image-mirror.1
 oc-image.1
 oc-import-app.json.1
@@ -308,7 +309,6 @@ oc-status.1
 oc-tag.1
 oc-types.1
 oc-version.1
-oc-volumes.1
 oc-wait.1
 oc-whoami.1
 oc.1

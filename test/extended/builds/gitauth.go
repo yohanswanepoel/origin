@@ -58,8 +58,11 @@ var _ = g.Describe("[Feature:Builds][Slow] can use private repositories as build
 		})
 
 		g.JustBeforeEach(func() {
+			g.By("waiting for default service account")
+			err := exutil.WaitForServiceAccount(oc.KubeClient().Core().ServiceAccounts(oc.Namespace()), "default")
+			o.Expect(err).NotTo(o.HaveOccurred())
 			g.By("waiting for builder service account")
-			err := exutil.WaitForBuilderAccount(oc.KubeClient().Core().ServiceAccounts(oc.Namespace()))
+			err = exutil.WaitForServiceAccount(oc.KubeClient().Core().ServiceAccounts(oc.Namespace()), "builder")
 			o.Expect(err).NotTo(o.HaveOccurred())
 		})
 
@@ -86,7 +89,7 @@ var _ = g.Describe("[Feature:Builds][Slow] can use private repositories as build
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			g.By("expecting the deployment of the gitserver to be in the Complete phase")
-			err = exutil.WaitForDeploymentConfig(oc.KubeClient(), oc.AppsClient().Apps(), oc.Namespace(), gitServerDeploymentConfigName, 1, true, oc)
+			err = exutil.WaitForDeploymentConfig(oc.KubeClient(), oc.AppsClient().AppsV1(), oc.Namespace(), gitServerDeploymentConfigName, 1, true, oc)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			sourceSecretName := secretFunc()

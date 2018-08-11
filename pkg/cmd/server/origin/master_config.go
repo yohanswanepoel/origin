@@ -2,16 +2,13 @@ package origin
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/golang/glog"
 	"github.com/openshift/origin/pkg/admission/namespaceconditions"
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/util/wait"
+	usercache "github.com/openshift/origin/pkg/user/cache"
 	"k8s.io/client-go/restmapper"
 
 	kapierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/admission"
@@ -32,20 +29,19 @@ import (
 	rbacregistryvalidation "k8s.io/kubernetes/pkg/registry/rbac/validation"
 	rbacauthorizer "k8s.io/kubernetes/plugin/pkg/auth/authorizer/rbac"
 
+	appsinformer "github.com/openshift/client-go/apps/informers/externalversions"
+	networkinformer "github.com/openshift/client-go/network/informers/externalversions"
+	oauthinformer "github.com/openshift/client-go/oauth/informers/externalversions"
 	routeinformer "github.com/openshift/client-go/route/informers/externalversions"
 	userinformer "github.com/openshift/client-go/user/informers/externalversions"
-	appinformer "github.com/openshift/origin/pkg/apps/generated/informers/internalversion"
 	authorizationinformer "github.com/openshift/origin/pkg/authorization/generated/informers/internalversion"
 	buildinformer "github.com/openshift/origin/pkg/build/generated/informers/internalversion"
 	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
 	kubernetes "github.com/openshift/origin/pkg/cmd/server/kubernetes/master"
 	originadmission "github.com/openshift/origin/pkg/cmd/server/origin/admission"
 	originrest "github.com/openshift/origin/pkg/cmd/server/origin/rest"
-	imageadmission "github.com/openshift/origin/pkg/image/admission"
-	imageapi "github.com/openshift/origin/pkg/image/apis/image"
+	imageadmission "github.com/openshift/origin/pkg/image/apiserver/admission/limitrange"
 	imageinformer "github.com/openshift/origin/pkg/image/generated/informers/internalversion"
-	networkinformer "github.com/openshift/origin/pkg/network/generated/informers/internalversion"
-	oauthinformer "github.com/openshift/origin/pkg/oauth/generated/informers/internalversion"
 	_ "github.com/openshift/origin/pkg/printers/internalversion"
 	projectauth "github.com/openshift/origin/pkg/project/auth"
 	projectcache "github.com/openshift/origin/pkg/project/cache"
@@ -53,8 +49,8 @@ import (
 	quotainformer "github.com/openshift/origin/pkg/quota/generated/informers/internalversion"
 	templateinformer "github.com/openshift/origin/pkg/template/generated/informers/internalversion"
 
+	"github.com/openshift/origin/pkg/image/apiserver/registryhostname"
 	securityinformer "github.com/openshift/origin/pkg/security/generated/informers/internalversion"
-	"github.com/openshift/origin/pkg/service"
 	"github.com/openshift/origin/pkg/util/restoptions"
 )
 
@@ -75,11 +71,11 @@ type MasterConfig struct {
 	ProjectCache                  *projectcache.ProjectCache
 	ClusterQuotaMappingController *clusterquotamapping.ClusterQuotaMappingController
 	LimitVerifier                 imageadmission.LimitVerifier
-	RESTMapper                    meta.RESTMapper
+	RESTMapper                    *restmapper.DeferredDiscoveryRESTMapper
 
 	// RegistryHostnameRetriever retrieves the name of the integrated registry, or false if no such registry
 	// is available.
-	RegistryHostnameRetriever imageapi.RegistryHostnameRetriever
+	RegistryHostnameRetriever registryhostname.RegistryHostnameRetriever
 
 	// PrivilegedLoopbackClientConfig is the client configuration used to call OpenShift APIs from system components
 	// To apply different access control to a system component, create a client config specifically for that component.
@@ -108,19 +104,22 @@ type MasterConfig struct {
 }
 
 type InformerAccess interface {
-	GetInternalKubeInformers() kinternalinformers.SharedInformerFactory
-	GetExternalKubeInformers() kinformers.SharedInformerFactory
-	GetAppInformers() appinformer.SharedInformerFactory
-	GetAuthorizationInformers() authorizationinformer.SharedInformerFactory
-	GetBuildInformers() buildinformer.SharedInformerFactory
-	GetImageInformers() imageinformer.SharedInformerFactory
-	GetNetworkInformers() networkinformer.SharedInformerFactory
-	GetOauthInformers() oauthinformer.SharedInformerFactory
-	GetQuotaInformers() quotainformer.SharedInformerFactory
-	GetSecurityInformers() securityinformer.SharedInformerFactory
-	GetRouteInformers() routeinformer.SharedInformerFactory
-	GetUserInformers() userinformer.SharedInformerFactory
-	GetTemplateInformers() templateinformer.SharedInformerFactory
+	GetInternalKubernetesInformers() kinternalinformers.SharedInformerFactory
+	GetKubernetesInformers() kinformers.SharedInformerFactory
+
+	GetOpenshiftAppInformers() appsinformer.SharedInformerFactory
+	GetOpenshiftOauthInformers() oauthinformer.SharedInformerFactory
+	GetOpenshiftNetworkInformers() networkinformer.SharedInformerFactory
+	GetOpenshiftRouteInformers() routeinformer.SharedInformerFactory
+	GetOpenshiftUserInformers() userinformer.SharedInformerFactory
+
+	GetInternalOpenshiftAuthorizationInformers() authorizationinformer.SharedInformerFactory
+	GetInternalOpenshiftBuildInformers() buildinformer.SharedInformerFactory
+	GetInternalOpenshiftImageInformers() imageinformer.SharedInformerFactory
+	GetInternalOpenshiftQuotaInformers() quotainformer.SharedInformerFactory
+	GetInternalOpenshiftSecurityInformers() securityinformer.SharedInformerFactory
+	GetInternalOpenshiftTemplateInformers() templateinformer.SharedInformerFactory
+
 	ToGenericInformer() GenericResourceInformer
 
 	Start(stopCh <-chan struct{})
@@ -144,7 +143,9 @@ func BuildMasterConfig(
 		if err != nil {
 			return nil, err
 		}
-		if err := realLoopbackInformers.AddUserIndexes(); err != nil {
+		if err := realLoopbackInformers.GetOpenshiftUserInformers().User().V1().Groups().Informer().AddIndexers(cache.Indexers{
+			usercache.ByUserIndexName: usercache.ByUserIndexKeys,
+		}); err != nil {
 			return nil, err
 		}
 		informers = realLoopbackInformers
@@ -168,11 +169,9 @@ func BuildMasterConfig(
 		return nil, err
 	}
 
-	defaultRegistry := env("OPENSHIFT_DEFAULT_REGISTRY", "${DOCKER_REGISTRY_SERVICE_HOST}:${DOCKER_REGISTRY_SERVICE_PORT}")
-	svcCache := service.NewServiceResolverCache(kubeInternalClient.Core().Services(metav1.NamespaceDefault).Get)
-	defaultRegistryFunc, err := svcCache.Defer(defaultRegistry)
+	registryHostnameRetriever, err := registryhostname.DefaultRegistryHostnameRetriever(privilegedLoopbackConfig, options.ImagePolicyConfig.ExternalRegistryHostname, options.ImagePolicyConfig.InternalRegistryHostname)
 	if err != nil {
-		return nil, fmt.Errorf("OPENSHIFT_DEFAULT_REGISTRY variable is invalid %q: %v", defaultRegistry, err)
+		return nil, err
 	}
 
 	authenticator, authenticatorPostStartHooks, err := NewAuthenticator(options, privilegedLoopbackConfig, informers)
@@ -185,7 +184,7 @@ func BuildMasterConfig(
 		return nil, err
 	}
 	clusterQuotaMappingController := newClusterQuotaMappingController(informers)
-	discoveryClient := cacheddiscovery.NewMemCacheClient(kubeInternalClient.Discovery())
+	discoveryClient := cacheddiscovery.NewMemCacheClient(privilegedLoopbackKubeClientsetExternal.Discovery())
 	restMapper := restmapper.NewDeferredDiscoveryRESTMapper(discoveryClient)
 	admissionInitializer, err := originadmission.NewPluginInitializer(options, privilegedLoopbackConfig, informers, authorizer, projectCache, restMapper, clusterQuotaMappingController)
 	if err != nil {
@@ -193,7 +192,7 @@ func BuildMasterConfig(
 	}
 	namespaceLabelDecorator := namespaceconditions.NamespaceLabelConditions{
 		NamespaceClient: privilegedLoopbackKubeClientsetExternal.CoreV1(),
-		NamespaceLister: informers.GetExternalKubeInformers().Core().V1().Namespaces().Lister(),
+		NamespaceLister: informers.GetKubernetesInformers().Core().V1().Namespaces().Lister(),
 
 		SkipLevelZeroNames: originadmission.SkipRunLevelZeroPlugins,
 		SkipLevelOneNames:  originadmission.SkipRunLevelOnePlugins,
@@ -216,22 +215,13 @@ func BuildMasterConfig(
 		return nil, err
 	}
 
-	subjectLocator := NewSubjectLocator(informers.GetExternalKubeInformers().Rbac().V1())
+	subjectLocator := NewSubjectLocator(informers.GetKubernetesInformers().Rbac().V1())
 
 	config := &MasterConfig{
 		Options: options,
 
 		kubeAPIServerConfig: kubeAPIServerConfig,
 		additionalPostStartHooks: map[string]genericapiserver.PostStartHookFunc{
-			"openshift.io-RESTMapper": func(context genericapiserver.PostStartHookContext) error {
-				restMapper.Reset()
-				go func() {
-					wait.Until(func() {
-						restMapper.Reset()
-					}, 10*time.Second, context.StopCh)
-				}()
-				return nil
-			},
 			"openshift.io-StartInformers": func(context genericapiserver.PostStartHookContext) error {
 				informers.Start(context.StopCh)
 				return nil
@@ -240,30 +230,30 @@ func BuildMasterConfig(
 
 		RESTOptionsGetter: restOptsGetter,
 
-		RuleResolver:   NewRuleResolver(informers.GetExternalKubeInformers().Rbac().V1()),
+		RuleResolver:   NewRuleResolver(informers.GetKubernetesInformers().Rbac().V1()),
 		SubjectLocator: subjectLocator,
 
 		ProjectAuthorizationCache: newProjectAuthorizationCache(
 			subjectLocator,
-			informers.GetInternalKubeInformers().Core().InternalVersion().Namespaces().Informer(),
-			informers.GetExternalKubeInformers().Rbac().V1(),
+			informers.GetInternalKubernetesInformers().Core().InternalVersion().Namespaces().Informer(),
+			informers.GetKubernetesInformers().Rbac().V1(),
 		),
 		ProjectCache:                  projectCache,
 		ClusterQuotaMappingController: clusterQuotaMappingController,
 		RESTMapper:                    restMapper,
 
-		RegistryHostnameRetriever: imageapi.DefaultRegistryHostnameRetriever(defaultRegistryFunc, options.ImagePolicyConfig.ExternalRegistryHostname, options.ImagePolicyConfig.InternalRegistryHostname),
+		RegistryHostnameRetriever: registryHostnameRetriever,
 
 		PrivilegedLoopbackClientConfig:                *privilegedLoopbackConfig,
 		PrivilegedLoopbackKubernetesClientsetInternal: kubeInternalClient,
 		PrivilegedLoopbackKubernetesClientsetExternal: privilegedLoopbackKubeClientsetExternal,
 
-		InternalKubeInformers:  informers.GetInternalKubeInformers(),
-		ClientGoKubeInformers:  informers.GetExternalKubeInformers(),
-		AuthorizationInformers: informers.GetAuthorizationInformers(),
-		QuotaInformers:         informers.GetQuotaInformers(),
-		SecurityInformers:      informers.GetSecurityInformers(),
-		RouteInformers:         informers.GetRouteInformers(),
+		InternalKubeInformers:  informers.GetInternalKubernetesInformers(),
+		ClientGoKubeInformers:  informers.GetKubernetesInformers(),
+		AuthorizationInformers: informers.GetInternalOpenshiftAuthorizationInformers(),
+		QuotaInformers:         informers.GetInternalOpenshiftQuotaInformers(),
+		SecurityInformers:      informers.GetInternalOpenshiftSecurityInformers(),
+		RouteInformers:         informers.GetOpenshiftRouteInformers(),
 	}
 
 	for name, hook := range authenticatorPostStartHooks {
@@ -292,8 +282,8 @@ func BuildMasterConfig(
 
 func newClusterQuotaMappingController(informers InformerAccess) *clusterquotamapping.ClusterQuotaMappingController {
 	return clusterquotamapping.NewClusterQuotaMappingControllerInternal(
-		informers.GetInternalKubeInformers().Core().InternalVersion().Namespaces(),
-		informers.GetQuotaInformers().Quota().InternalVersion().ClusterResourceQuotas())
+		informers.GetInternalKubernetesInformers().Core().InternalVersion().Namespaces(),
+		informers.GetInternalOpenshiftQuotaInformers().Quota().InternalVersion().ClusterResourceQuotas())
 }
 
 func newProjectCache(informers InformerAccess, privilegedLoopbackConfig *restclient.Config, defaultNodeSelector string) (*projectcache.ProjectCache, error) {
@@ -302,7 +292,7 @@ func newProjectCache(informers InformerAccess, privilegedLoopbackConfig *restcli
 		return nil, err
 	}
 	return projectcache.NewProjectCache(
-		informers.GetInternalKubeInformers().Core().InternalVersion().Namespaces().Informer(),
+		informers.GetInternalKubernetesInformers().Core().InternalVersion().Namespaces().Informer(),
 		kubeInternalClient.Core().Namespaces(),
 		defaultNodeSelector), nil
 }

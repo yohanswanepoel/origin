@@ -25,10 +25,12 @@ import (
 	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
 	"github.com/openshift/origin/pkg/cmd/server/bootstrappolicy"
 	"github.com/openshift/origin/pkg/cmd/server/origin"
+	"github.com/openshift/origin/pkg/cmd/util"
 	"github.com/openshift/origin/pkg/version"
 )
 
 func RunOpenShiftControllerManager(config *configapi.OpenshiftControllerConfig, clientConfig *rest.Config) error {
+	util.InitLogrus()
 	kubeExternal, err := kclientsetexternal.NewForConfig(clientConfig)
 	if err != nil {
 		return err
@@ -102,7 +104,7 @@ func newControllerContext(
 	config configapi.OpenshiftControllerConfig,
 	inClientConfig *rest.Config,
 	kubeExternal kclientsetexternal.Interface,
-	informers origin.InformerAccess,
+	originInformers origin.InformerAccess,
 	stopCh <-chan struct{},
 	informersStarted chan struct{},
 ) origincontrollers.ControllerContext {
@@ -131,22 +133,22 @@ func newControllerContext(
 		ClientBuilder: origincontrollers.OpenshiftControllerClientBuilder{
 			ControllerClientBuilder: controller.SAControllerClientBuilder{
 				ClientConfig:         rest.AnonymousClientConfig(clientConfig),
-				CoreClient:           kubeExternal.Core(),
-				AuthenticationClient: kubeExternal.Authentication(),
+				CoreClient:           kubeExternal.CoreV1(),
+				AuthenticationClient: kubeExternal.AuthenticationV1(),
 				Namespace:            bootstrappolicy.DefaultOpenShiftInfraNamespace,
 			},
 		},
-		ExternalKubeInformers:   informers.GetExternalKubeInformers(),
-		AppInformers:            informers.GetAppInformers(),
-		AuthorizationInformers:  informers.GetAuthorizationInformers(),
-		BuildInformers:          informers.GetBuildInformers(),
-		ImageInformers:          informers.GetImageInformers(),
-		NetworkInformers:        informers.GetNetworkInformers(),
-		QuotaInformers:          informers.GetQuotaInformers(),
-		SecurityInformers:       informers.GetSecurityInformers(),
-		RouteInformers:          informers.GetRouteInformers(),
-		TemplateInformers:       informers.GetTemplateInformers(),
-		GenericResourceInformer: informers.ToGenericInformer(),
+		KubernetesInformers:            originInformers.GetKubernetesInformers(),
+		AppsInformers:                  originInformers.GetOpenshiftAppInformers(),
+		InternalAuthorizationInformers: originInformers.GetInternalOpenshiftAuthorizationInformers(),
+		InternalBuildInformers:         originInformers.GetInternalOpenshiftBuildInformers(),
+		InternalImageInformers:         originInformers.GetInternalOpenshiftImageInformers(),
+		NetworkInformers:               originInformers.GetOpenshiftNetworkInformers(),
+		InternalQuotaInformers:         originInformers.GetInternalOpenshiftQuotaInformers(),
+		InternalSecurityInformers:      originInformers.GetInternalOpenshiftSecurityInformers(),
+		InternalRouteInformers:         originInformers.GetOpenshiftRouteInformers(),
+		InternalTemplateInformers:      originInformers.GetInternalOpenshiftTemplateInformers(),
+		GenericResourceInformer:        originInformers.ToGenericInformer(),
 		Stop:             stopCh,
 		InformersStarted: informersStarted,
 		RestMapper:       dynamicRestMapper,

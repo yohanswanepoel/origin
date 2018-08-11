@@ -21,6 +21,9 @@ var _ = g.Describe("[image_ecosystem][mongodb] openshift mongodb image", func() 
 	g.Context("", func() {
 		g.BeforeEach(func() {
 			exutil.DumpDockerInfo()
+			g.By("waiting for default service account")
+			err := exutil.WaitForServiceAccount(oc.KubeClient().Core().ServiceAccounts(oc.Namespace()), "default")
+			o.Expect(err).NotTo(o.HaveOccurred())
 		})
 
 		g.AfterEach(func() {
@@ -38,7 +41,7 @@ var _ = g.Describe("[image_ecosystem][mongodb] openshift mongodb image", func() 
 				o.Expect(oc.Run("new-app").Args("-f", templatePath).Execute()).Should(o.Succeed())
 
 				g.By("waiting for the deployment to complete")
-				err := exutil.WaitForDeploymentConfig(oc.KubeClient(), oc.AppsClient().Apps(), oc.Namespace(), "mongodb", 1, true, oc)
+				err := exutil.WaitForDeploymentConfig(oc.KubeClient(), oc.AppsClient().AppsV1(), oc.Namespace(), "mongodb", 1, true, oc)
 				o.Expect(err).ShouldNot(o.HaveOccurred())
 
 				g.By("expecting the mongodb pod is running")

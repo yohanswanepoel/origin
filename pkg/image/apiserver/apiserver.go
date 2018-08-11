@@ -1,48 +1,53 @@
 package apiserver
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	knet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apiserver/pkg/registry/rest"
 	genericapiserver "k8s.io/apiserver/pkg/server"
+	authorizationclient "k8s.io/client-go/kubernetes/typed/authorization/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/util/flowcontrol"
-	authorizationclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/authorization/internalversion"
 	coreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
 
 	imageapiv1 "github.com/openshift/api/image/v1"
 	imageclientv1 "github.com/openshift/client-go/image/clientset/versioned"
 	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
-	imageadmission "github.com/openshift/origin/pkg/image/admission"
-	imageapi "github.com/openshift/origin/pkg/image/apis/image"
 	"github.com/openshift/origin/pkg/image/apis/image/validation/whitelist"
+	imageadmission "github.com/openshift/origin/pkg/image/apiserver/admission/limitrange"
+	"github.com/openshift/origin/pkg/image/apiserver/registry/image"
+	imageetcd "github.com/openshift/origin/pkg/image/apiserver/registry/image/etcd"
+	"github.com/openshift/origin/pkg/image/apiserver/registry/imagesecret"
+	"github.com/openshift/origin/pkg/image/apiserver/registry/imagesignature"
+	"github.com/openshift/origin/pkg/image/apiserver/registry/imagestream"
+	imagestreametcd "github.com/openshift/origin/pkg/image/apiserver/registry/imagestream/etcd"
+	"github.com/openshift/origin/pkg/image/apiserver/registry/imagestreamimage"
+	"github.com/openshift/origin/pkg/image/apiserver/registry/imagestreamimport"
+	"github.com/openshift/origin/pkg/image/apiserver/registry/imagestreammapping"
+	"github.com/openshift/origin/pkg/image/apiserver/registry/imagestreamtag"
+	"github.com/openshift/origin/pkg/image/apiserver/registryhostname"
 	imageclient "github.com/openshift/origin/pkg/image/generated/internalclientset"
 	"github.com/openshift/origin/pkg/image/importer"
 	imageimporter "github.com/openshift/origin/pkg/image/importer"
 	"github.com/openshift/origin/pkg/image/importer/dockerv1client"
-	"github.com/openshift/origin/pkg/image/registry/image"
-	imageetcd "github.com/openshift/origin/pkg/image/registry/image/etcd"
-	"github.com/openshift/origin/pkg/image/registry/imagesecret"
-	"github.com/openshift/origin/pkg/image/registry/imagesignature"
-	"github.com/openshift/origin/pkg/image/registry/imagestream"
-	imagestreametcd "github.com/openshift/origin/pkg/image/registry/imagestream/etcd"
-	"github.com/openshift/origin/pkg/image/registry/imagestreamimage"
-	"github.com/openshift/origin/pkg/image/registry/imagestreamimport"
-	"github.com/openshift/origin/pkg/image/registry/imagestreammapping"
-	"github.com/openshift/origin/pkg/image/registry/imagestreamtag"
 )
 
 type ExtraConfig struct {
 	KubeAPIServerClientConfig          *restclient.Config
 	LimitVerifier                      imageadmission.LimitVerifier
-	RegistryHostnameRetriever          imageapi.RegistryHostnameRetriever
+	RegistryHostnameRetriever          registryhostname.RegistryHostnameRetriever
 	AllowedRegistriesForImport         *configapi.AllowedRegistries
 	MaxImagesBulkImportedPerRepository int
+	AdditionalTrustedCA                []byte
 
 	// TODO these should all become local eventually
 	Scheme *runtime.Scheme
@@ -51,6 +56,7 @@ type ExtraConfig struct {
 	makeV1Storage sync.Once
 	v1Storage     map[string]rest.Storage
 	v1StorageErr  error
+	startFns      []func(<-chan struct{})
 }
 
 type ImageAPIServerConfig struct {
@@ -104,6 +110,15 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 		return nil, err
 	}
 
+	if err := s.GenericAPIServer.AddPostStartHook("image.openshift.io-apiserver-caches", func(context genericapiserver.PostStartHookContext) error {
+		for _, fn := range c.ExtraConfig.startFns {
+			go fn(context.StopCh)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
 	return s, nil
 }
 
@@ -116,11 +131,34 @@ func (c *completedConfig) V1RESTStorage() (map[string]rest.Storage, error) {
 }
 
 func (c *completedConfig) newV1RESTStorage() (map[string]rest.Storage, error) {
-	// TODO: allow the system CAs and the local CAs to be joined together.
-	importTransport, err := restclient.TransportFor(&restclient.Config{})
+	cfg := restclient.Config{}
+
+	tlsConfig := &tls.Config{}
+
+	var err error
+	tlsConfig.RootCAs, err = x509.SystemCertPool()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get system cert pool for default transport for image importing: %v", err)
+	}
+	if tlsConfig.RootCAs == nil {
+		tlsConfig.RootCAs = x509.NewCertPool()
+	}
+
+	if len(c.ExtraConfig.AdditionalTrustedCA) != 0 {
+		if ok := tlsConfig.RootCAs.AppendCertsFromPEM(c.ExtraConfig.AdditionalTrustedCA); !ok {
+			return nil, fmt.Errorf("No valid certificates read from %v", c.ExtraConfig.AdditionalTrustedCA)
+		}
+	}
+
+	transport := knet.SetTransportDefaults(&http.Transport{
+		TLSClientConfig: tlsConfig,
+	})
+
+	importTransport, err := restclient.HTTPWrappersForConfig(&cfg, transport)
 	if err != nil {
 		return nil, fmt.Errorf("unable to configure a default transport for importing: %v", err)
 	}
+
 	insecureImportTransport, err := restclient.TransportFor(&restclient.Config{
 		TLSClientConfig: restclient.TLSClientConfig{
 			Insecure: true,
@@ -165,10 +203,13 @@ func (c *completedConfig) newV1RESTStorage() (map[string]rest.Storage, error) {
 		whitelister = whitelist.WhitelistAllRegistries()
 	}
 
+	imageLayerIndex := imagestreametcd.NewImageLayerIndex(imageV1Client.Image().Images())
+	c.ExtraConfig.startFns = append(c.ExtraConfig.startFns, imageLayerIndex.Run)
+
 	imageRegistry := image.NewRegistry(imageStorage)
 	imageSignatureStorage := imagesignature.NewREST(imageClient.Image())
 	imageStreamSecretsStorage := imagesecret.NewREST(coreClient)
-	imageStreamStorage, imageStreamStatusStorage, internalImageStreamStorage, err := imagestreametcd.NewREST(c.GenericConfig.RESTOptionsGetter, c.ExtraConfig.RegistryHostnameRetriever, authorizationClient.SubjectAccessReviews(), c.ExtraConfig.LimitVerifier, whitelister)
+	imageStreamStorage, imageStreamLayersStorage, imageStreamStatusStorage, internalImageStreamStorage, err := imagestreametcd.NewREST(c.GenericConfig.RESTOptionsGetter, c.ExtraConfig.RegistryHostnameRetriever, authorizationClient.SubjectAccessReviews(), c.ExtraConfig.LimitVerifier, whitelister, imageLayerIndex)
 	if err != nil {
 		return nil, fmt.Errorf("error building REST storage: %v", err)
 	}
@@ -203,6 +244,7 @@ func (c *completedConfig) newV1RESTStorage() (map[string]rest.Storage, error) {
 	v1Storage["imagesignatures"] = imageSignatureStorage
 	v1Storage["imageStreams/secrets"] = imageStreamSecretsStorage
 	v1Storage["imageStreams"] = imageStreamStorage
+	v1Storage["imageStreams/layers"] = imageStreamLayersStorage
 	v1Storage["imageStreams/status"] = imageStreamStatusStorage
 	v1Storage["imageStreamImports"] = imageStreamImportStorage
 	v1Storage["imageStreamImages"] = imageStreamImageStorage

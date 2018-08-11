@@ -35,11 +35,11 @@ import (
 	"k8s.io/kubernetes/pkg/proxy/apis/kubeproxyconfig"
 	kexec "k8s.io/utils/exec"
 
+	networkapi "github.com/openshift/api/network/v1"
+	networkclient "github.com/openshift/client-go/network/clientset/versioned"
+	networkinformers "github.com/openshift/client-go/network/informers/externalversions"
 	"github.com/openshift/origin/pkg/network"
-	networkapi "github.com/openshift/origin/pkg/network/apis/network"
 	"github.com/openshift/origin/pkg/network/common"
-	networkinformers "github.com/openshift/origin/pkg/network/generated/informers/internalversion"
-	networkclient "github.com/openshift/origin/pkg/network/generated/internalclientset"
 	"github.com/openshift/origin/pkg/network/node/cniserver"
 	"github.com/openshift/origin/pkg/util/netutils"
 	"github.com/openshift/origin/pkg/util/ovs"
@@ -316,7 +316,7 @@ func (node *OsdnNode) Start() error {
 	for _, cn := range node.networkInfo.ClusterNetworks {
 		cidrList = append(cidrList, cn.ClusterCIDR.String())
 	}
-	nodeIPTables := newNodeIPTables(cidrList, node.iptablesSyncPeriod, !node.useConnTrack)
+	nodeIPTables := newNodeIPTables(cidrList, node.iptablesSyncPeriod, !node.useConnTrack, node.networkInfo.VXLANPort)
 
 	if err = nodeIPTables.Setup(); err != nil {
 		return fmt.Errorf("failed to set up iptables: %v", err)

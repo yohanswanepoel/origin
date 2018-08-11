@@ -14,8 +14,10 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 
 	buildv1 "github.com/openshift/api/build/v1"
+	"github.com/openshift/origin/pkg/api/legacy"
 	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	buildv1helpers "github.com/openshift/origin/pkg/build/apis/build/v1"
+	"github.com/openshift/origin/pkg/build/buildapihelpers"
 	buildutil "github.com/openshift/origin/pkg/build/util"
 )
 
@@ -25,13 +27,9 @@ var (
 )
 
 func init() {
-	utilruntime.Must(buildv1.AddToScheme(customBuildEncodingScheme))
-	utilruntime.Must(buildv1helpers.AddToScheme(customBuildEncodingScheme))
-	utilruntime.Must(buildv1.AddToSchemeInCoreGroup(customBuildEncodingScheme))
-	utilruntime.Must(buildv1helpers.AddToSchemeInCoreGroup(customBuildEncodingScheme))
+	legacy.InstallInternalLegacyBuild(customBuildEncodingScheme)
 	// TODO eventually we shouldn't deal in internal versions, but for now decode into one.
-	utilruntime.Must(buildapi.AddToScheme(customBuildEncodingScheme))
-	utilruntime.Must(buildapi.AddToSchemeInCoreGroup(customBuildEncodingScheme))
+	utilruntime.Must(buildv1helpers.Install(customBuildEncodingScheme))
 	customBuildEncodingCodecFactory = serializer.NewCodecFactory(customBuildEncodingScheme)
 }
 
@@ -94,7 +92,7 @@ func (bs *CustomBuildStrategy) CreateBuildPod(build *buildapi.Build) (*v1.Pod, e
 	privileged := true
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      buildapi.GetBuildPodName(build),
+			Name:      buildapihelpers.GetBuildPodName(build),
 			Namespace: build.Namespace,
 			Labels:    getPodLabels(build),
 		},

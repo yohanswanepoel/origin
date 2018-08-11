@@ -1,10 +1,12 @@
 package config
 
 import (
+	"github.com/openshift/origin/pkg/build/apis/build"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/kubernetes/pkg/apis/core"
 )
 
 // A new entry shall be added to FeatureAliases for every change to following values.
@@ -526,6 +528,10 @@ type ImagePolicyConfig struct {
 	// is exposed externally. The value is used in 'publicDockerImageRepository'
 	// field in ImageStreams. The value must be in "hostname[:port]" format.
 	ExternalRegistryHostname string
+
+	// AdditionalTrustedCA is a path to a pem bundle file containing additional CAs that
+	// should be trusted during imagestream import.
+	AdditionalTrustedCA string
 }
 
 // AllowedRegistries represents a list of registries allowed for the image import.
@@ -638,6 +644,8 @@ type MasterNetworkConfig struct {
 	// For security reasons, you should ensure that this range does not overlap with the CIDRs reserved for external ips,
 	// nodes, pods, or services.
 	IngressIPNetworkCIDR string
+	// VXLANPort is the VXLAN port used by the cluster. If it is not set, 4789 is the default value
+	VXLANPort uint32
 }
 
 // ClusterNetworkEntry defines an individual cluster network. The CIDRs cannot overlap with other cluster network CIDRs, CIDRs
@@ -1048,6 +1056,12 @@ type GitHubIdentityProvider struct {
 	Organizations []string
 	// Teams optionally restricts which teams are allowed to log in. Format is <org>/<team>.
 	Teams []string
+	// Hostname is the optional domain (e.g. "mycompany.com") for use with a hosted instance of GitHub Enterprise.
+	// It must match the GitHub Enterprise settings value that is configured at /setup/settings#hostname.
+	Hostname string
+	// CA is the optional trusted certificate authority bundle to use when making requests to the server.
+	// If empty, the default system roots are used.  This can only be configured when hostname is set to a non-empty value.
+	CA string
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -1064,6 +1078,14 @@ type GitLabIdentityProvider struct {
 	ClientID string
 	// ClientSecret is the oauth client secret
 	ClientSecret StringSource
+	// Legacy determines if OAuth2 or OIDC should be used
+	// If true, OAuth2 is used
+	// If false, OIDC is used
+	// If nil and the URL's host is gitlab.com, OIDC is used
+	// Otherwise, OAuth2 is used
+	// In a future release, nil will default to using OIDC
+	// Eventually this flag will be removed and only OIDC will be used
+	Legacy *bool
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -1500,7 +1522,6 @@ type OpenshiftControllerConfig struct {
 	// Defaults to "*".
 	Controllers []string
 
-	HPA                HPAControllerConfig
 	ResourceQuota      ResourceQuotaControllerConfig
 	ServiceServingCert ServiceServingCert
 	Deployer           DeployerControllerConfig
@@ -1520,14 +1541,8 @@ type DeployerControllerConfig struct {
 type BuildControllerConfig struct {
 	ImageTemplateFormat ImageConfig
 
-	// TODO slim this down to what is actually needed
-	AdmissionPluginConfig map[string]*AdmissionPluginConfig
-}
-
-type HPAControllerConfig struct {
-	SyncPeriod               metav1.Duration
-	UpscaleForbiddenWindow   metav1.Duration
-	DownscaleForbiddenWindow metav1.Duration
+	BuildDefaults  *BuildDefaultsConfig
+	BuildOverrides *BuildOverridesConfig
 }
 
 type ResourceQuotaControllerConfig struct {
@@ -1550,6 +1565,7 @@ type NetworkControllerConfig struct {
 	// ClusterNetworks contains a list of cluster networks that defines the global overlay networks L3 space.
 	ClusterNetworks    []ClusterNetworkEntry
 	ServiceNetworkCIDR string
+	VXLANPort          uint32
 }
 
 type ServiceAccountControllerConfig struct {
@@ -1578,4 +1594,76 @@ type LeaderElectionConfig struct {
 	LeaseDuration metav1.Duration
 	RenewDeadline metav1.Duration
 	RetryPeriod   metav1.Duration
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// BuildDefaultsConfig controls the default information for Builds
+type BuildDefaultsConfig struct {
+	metav1.TypeMeta
+
+	// gitHTTPProxy is the location of the HTTPProxy for Git source
+	GitHTTPProxy string
+
+	// gitHTTPSProxy is the location of the HTTPSProxy for Git source
+	GitHTTPSProxy string
+
+	// gitNoProxy is the list of domains for which the proxy should not be used
+	GitNoProxy string
+
+	// env is a set of default environment variables that will be applied to the
+	// build if the specified variables do not exist on the build
+	Env []core.EnvVar
+
+	// sourceStrategyDefaults are default values that apply to builds using the
+	// source strategy.
+	SourceStrategyDefaults *SourceStrategyDefaultsConfig
+
+	// imageLabels is a list of docker labels that are applied to the resulting image.
+	// User can override a default label by providing a label with the same name in their
+	// Build/BuildConfig.
+	ImageLabels []build.ImageLabel
+
+	// nodeSelector is a selector which must be true for the build pod to fit on a node
+	NodeSelector map[string]string
+
+	// annotations are annotations that will be added to the build pod
+	Annotations map[string]string
+
+	// resources defines resource requirements to execute the build.
+	Resources core.ResourceRequirements
+}
+
+// SourceStrategyDefaultsConfig contains values that apply to builds using the
+// source strategy.
+type SourceStrategyDefaultsConfig struct {
+
+	// Incremental indicates if s2i build strategies should perform an incremental
+	// build or not
+	Incremental *bool
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// BuildOverridesConfig controls override settings for builds
+type BuildOverridesConfig struct {
+	metav1.TypeMeta
+
+	// forcePull indicates whether the build strategy should always be set to ForcePull=true
+	ForcePull bool
+
+	// imageLabels is a list of docker labels that are applied to the resulting image.
+	// If user provided a label in their Build/BuildConfig with the same name as one in this
+	// list, the user's label will be overwritten.
+	ImageLabels []build.ImageLabel
+
+	// nodeSelector is a selector which must be true for the build pod to fit on a node
+	NodeSelector map[string]string
+
+	// annotations are annotations that will be added to the build pod
+	Annotations map[string]string
+
+	// tolerations is a list of Tolerations that will override any existing
+	// tolerations set on a build pod.
+	Tolerations []core.Toleration
 }

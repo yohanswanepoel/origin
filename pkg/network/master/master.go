@@ -17,14 +17,13 @@ import (
 	kclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 
+	networkapi "github.com/openshift/api/network/v1"
+	networkclient "github.com/openshift/client-go/network/clientset/versioned"
+	networkinternalinformers "github.com/openshift/client-go/network/informers/externalversions"
+	networkinformers "github.com/openshift/client-go/network/informers/externalversions/network/v1"
 	osconfigapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
 	"github.com/openshift/origin/pkg/network"
-	networkapi "github.com/openshift/origin/pkg/network/apis/network"
-	osapivalidation "github.com/openshift/origin/pkg/network/apis/network/validation"
 	"github.com/openshift/origin/pkg/network/common"
-	networkinternalinformers "github.com/openshift/origin/pkg/network/generated/informers/internalversion"
-	networkinformers "github.com/openshift/origin/pkg/network/generated/informers/internalversion/network/internalversion"
-	networkclient "github.com/openshift/origin/pkg/network/generated/internalclientset"
 	"github.com/openshift/origin/pkg/util/netutils"
 )
 
@@ -63,8 +62,8 @@ func Start(networkConfig osconfigapi.NetworkControllerConfig, networkClient netw
 
 		nodeInformer:         kubeInformers.Core().V1().Nodes(),
 		namespaceInformer:    kubeInformers.Core().V1().Namespaces(),
-		hostSubnetInformer:   networkInformers.Network().InternalVersion().HostSubnets(),
-		netNamespaceInformer: networkInformers.Network().InternalVersion().NetNamespaces(),
+		hostSubnetInformer:   networkInformers.Network().V1().HostSubnets(),
+		netNamespaceInformer: networkInformers.Network().V1().NetNamespaces(),
 
 		subnetAllocatorMap: map[common.ClusterNetwork]*SubnetAllocator{},
 		hostSubnetNodeIPs:  map[ktypes.UID]string{},
@@ -75,7 +74,7 @@ func Start(networkConfig osconfigapi.NetworkControllerConfig, networkClient netw
 	for _, entry := range networkConfig.ClusterNetworks {
 		clusterNetworkEntries = append(clusterNetworkEntries, networkapi.ClusterNetworkEntry{CIDR: entry.CIDR, HostSubnetLength: entry.HostSubnetLength})
 	}
-	master.networkInfo, err = common.ParseNetworkInfo(clusterNetworkEntries, networkConfig.ServiceNetworkCIDR)
+	master.networkInfo, err = common.ParseNetworkInfo(clusterNetworkEntries, networkConfig.ServiceNetworkCIDR, &networkConfig.VXLANPort)
 	if err != nil {
 		return err
 	}
@@ -95,12 +94,12 @@ func Start(networkConfig osconfigapi.NetworkControllerConfig, networkClient netw
 		ClusterNetworks: parsedClusterNetworkEntries,
 		ServiceNetwork:  master.networkInfo.ServiceNetwork.String(),
 		PluginName:      networkConfig.NetworkPluginName,
+		VXLANPort:       &networkConfig.VXLANPort,
 
 		// Need to set these for backward compat
 		Network:          parsedClusterNetworkEntries[0].CIDR,
 		HostSubnetLength: parsedClusterNetworkEntries[0].HostSubnetLength,
 	}
-	osapivalidation.SetDefaultClusterNetwork(*configCN)
 
 	// try this for a while before just dying
 	var getError error
@@ -193,6 +192,9 @@ func (master *OsdnMaster) startSubSystems(pluginName string) {
 			glog.Fatalf("failed to start VNID master: %v", err)
 		}
 	}
+
+	eim := newEgressIPManager()
+	eim.Start(master.networkClient, master.hostSubnetInformer, master.netNamespaceInformer)
 }
 
 func (master *OsdnMaster) checkClusterNetworkAgainstLocalNetworks() error {

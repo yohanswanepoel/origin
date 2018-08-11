@@ -60,7 +60,7 @@ os::cmd::expect_success "oc new-build -D \$'FROM openshift/origin:v1.1\nENV ok=1
 os::cmd::expect_success_and_text "oc get bc/origin-test2 --template '${template}'" '^ImageStreamTag origin-name-test:latest$'
 
 os::cmd::try_until_text 'oc get is ruby-22-centos7' 'latest'
-os::cmd::expect_failure_and_text 'oc new-build ruby-22-centos7~https://github.com/openshift/ruby-ex ruby-22-centos7~https://github.com/openshift/ruby-ex --to invalid/argument' 'error: only one component with source can be used when specifying an output image reference'
+os::cmd::expect_failure_and_text 'oc new-build ruby-22-centos7~https://github.com/sclorg/ruby-ex ruby-22-centos7~https://github.com/sclorg/ruby-ex --to invalid/argument' 'error: only one component with source can be used when specifying an output image reference'
 
 os::cmd::expect_success 'oc delete all --all'
 
@@ -99,7 +99,7 @@ os::cmd::expect_success_and_text 'oc start-build --list-webhooks=github ruby-sam
 os::cmd::expect_failure 'oc start-build --list-webhooks=blah'
 hook=$(oc start-build --list-webhooks='generic' ruby-sample-build | head -n 1)
 hook=${hook/<secret>/secret101}
-os::cmd::expect_success_and_text "oc start-build --from-webhook=${hook}" "build.build.openshift.io \"ruby-sample-build-[0-9]\" started"
+os::cmd::expect_success_and_text "oc start-build --from-webhook=${hook}" "build.build.openshift.io/ruby-sample-build-[0-9] started"
 os::cmd::expect_failure_and_text "oc start-build --from-webhook=${hook}/foo" "error: server rejected our request"
 os::cmd::expect_success "oc patch bc/ruby-sample-build -p '{\"spec\":{\"strategy\":{\"dockerStrategy\":{\"from\":{\"name\":\"asdf:7\"}}}}}'"
 os::cmd::expect_failure_and_text "oc start-build --from-webhook=${hook}" "Error resolving ImageStreamTag asdf:7"
@@ -162,25 +162,27 @@ os::cmd::expect_success_and_not_text "oc describe ${build_name}" 'No Cache'
 build_name="$(oc start-build -o=name --no-cache test)"
 os::cmd::expect_success_and_text "oc describe ${build_name}" 'No Cache'
 os::cmd::expect_failure_and_text "oc start-build test --incremental" 'Cannot specify Source build specific options'
+# ensure a specific version can be specified for buildconfigs
+os::cmd::expect_failure_and_not_text "oc logs bc/test --version=1" "cannot specify a version and a build"
 os::cmd::expect_success 'oc delete all --selector="name=test"'
 echo "start-build: ok"
 os::test::junit::declare_suite_end
 
 os::test::junit::declare_suite_start "cmd/builds/cancel-build"
-os::cmd::expect_success_and_text "oc cancel-build ${started} --dump-logs --restart" "restarted build \"${started}\""
+os::cmd::expect_success_and_text "oc cancel-build ${started} --dump-logs --restart" "build.build.openshift.io/${started} restarted"
 os::cmd::expect_success 'oc delete all --all'
 os::cmd::expect_success 'oc delete secret dbsecret'
 os::cmd::expect_success 'oc process -f examples/sample-app/application-template-dockerbuild.json -l build=docker | oc create -f -'
 os::cmd::try_until_success 'oc get build/ruby-sample-build-1'
 # Uses type/name resource syntax to cancel the build and check for proper message
-os::cmd::expect_success_and_text 'oc cancel-build build/ruby-sample-build-1' 'build.build.openshift.io "ruby-sample-build-1" cancelled'
+os::cmd::expect_success_and_text 'oc cancel-build build/ruby-sample-build-1' 'build.build.openshift.io/ruby-sample-build-1 cancelled'
 # Make sure canceling already cancelled build returns proper message
 os::cmd::expect_success 'oc cancel-build build/ruby-sample-build-1'
 # Cancel all builds from a build configuration
 os::cmd::expect_success "oc start-build bc/ruby-sample-build"
 os::cmd::expect_success "oc start-build bc/ruby-sample-build"
 lastbuild="$(basename $(oc start-build -o=name bc/ruby-sample-build))"
-os::cmd::expect_success_and_text 'oc cancel-build bc/ruby-sample-build', "\"${lastbuild}\" cancelled"
+os::cmd::expect_success_and_text 'oc cancel-build bc/ruby-sample-build', "build.build.openshift.io/${lastbuild} cancelled"
 os::cmd::expect_success_and_text "oc get build ${lastbuild} -o template --template '{{.status.phase}}'", 'Cancelled'
 builds=$(oc get builds -o template --template '{{range .items}}{{ .status.phase }} {{end}}')
 for state in $builds; do

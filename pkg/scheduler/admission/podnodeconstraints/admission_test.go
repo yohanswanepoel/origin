@@ -18,6 +18,8 @@ import (
 	"k8s.io/kubernetes/pkg/auth/nodeidentifier"
 	"k8s.io/kubernetes/pkg/serviceaccount"
 
+	oapps "github.com/openshift/api/apps"
+	"github.com/openshift/api/security"
 	_ "github.com/openshift/origin/pkg/api/install"
 	appsapi "github.com/openshift/origin/pkg/apps/apis/apps"
 	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
@@ -225,8 +227,8 @@ func TestPodNodeConstraintsResources(t *testing.T) {
 		},
 		{
 			resource:      deploymentConfig,
-			kind:          appsapi.Kind("DeploymentConfig"),
-			groupresource: appsapi.Resource("deploymentconfigs"),
+			kind:          oapps.Kind("DeploymentConfig"),
+			groupresource: oapps.Resource("deploymentconfigs"),
 			prefix:        "DeploymentConfig",
 		},
 		{
@@ -237,20 +239,20 @@ func TestPodNodeConstraintsResources(t *testing.T) {
 		},
 		{
 			resource:      podSecurityPolicySubjectReview,
-			kind:          securityapi.Kind("PodSecurityPolicySubjectReview"),
-			groupresource: securityapi.Resource("podsecuritypolicysubjectreviews"),
+			kind:          security.Kind("PodSecurityPolicySubjectReview"),
+			groupresource: security.Resource("podsecuritypolicysubjectreviews"),
 			prefix:        "PodSecurityPolicy",
 		},
 		{
 			resource:      podSecurityPolicySelfSubjectReview,
-			kind:          securityapi.Kind("PodSecurityPolicySelfSubjectReview"),
-			groupresource: securityapi.Resource("podsecuritypolicyselfsubjectreviews"),
+			kind:          security.Kind("PodSecurityPolicySelfSubjectReview"),
+			groupresource: security.Resource("podsecuritypolicyselfsubjectreviews"),
 			prefix:        "PodSecurityPolicy",
 		},
 		{
 			resource:      podSecurityPolicyReview,
-			kind:          securityapi.Kind("PodSecurityPolicyReview"),
-			groupresource: securityapi.Resource("podsecuritypolicyreviews"),
+			kind:          security.Kind("PodSecurityPolicyReview"),
+			groupresource: security.Resource("podsecuritypolicyreviews"),
 			prefix:        "PodSecurityPolicy",
 		},
 	}

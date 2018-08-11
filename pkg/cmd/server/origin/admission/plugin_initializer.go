@@ -3,28 +3,8 @@ package admission
 import (
 	"fmt"
 	"io/ioutil"
-	"os"
 
-	authorizationclient "github.com/openshift/client-go/authorization/clientset/versioned"
-	buildclient "github.com/openshift/client-go/build/clientset/versioned"
-	userclient "github.com/openshift/client-go/user/clientset/versioned"
-	userinformer "github.com/openshift/client-go/user/informers/externalversions"
-	oadmission "github.com/openshift/origin/pkg/cmd/server/admission"
-	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
-	kubernetes "github.com/openshift/origin/pkg/cmd/server/kubernetes/master"
-	imageapi "github.com/openshift/origin/pkg/image/apis/image"
-	imageinformer "github.com/openshift/origin/pkg/image/generated/informers/internalversion"
-	imageclient "github.com/openshift/origin/pkg/image/generated/internalclientset"
-	projectcache "github.com/openshift/origin/pkg/project/cache"
-	"github.com/openshift/origin/pkg/quota/controller/clusterquotamapping"
-	quotainformer "github.com/openshift/origin/pkg/quota/generated/informers/internalversion"
-	quotaclient "github.com/openshift/origin/pkg/quota/generated/internalclientset"
-	"github.com/openshift/origin/pkg/quota/image"
-	securityinformer "github.com/openshift/origin/pkg/security/generated/informers/internalversion"
-	"github.com/openshift/origin/pkg/service"
-	templateclient "github.com/openshift/origin/pkg/template/generated/internalclientset"
 	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/apiserver/pkg/admission/initializer"
@@ -41,15 +21,28 @@ import (
 	kadmission "k8s.io/kubernetes/pkg/kubeapiserver/admission"
 	"k8s.io/kubernetes/pkg/quota/generic"
 	"k8s.io/kubernetes/pkg/quota/install"
+
+	userinformer "github.com/openshift/client-go/user/informers/externalversions"
+	oadmission "github.com/openshift/origin/pkg/cmd/server/admission"
+	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
+	kubernetes "github.com/openshift/origin/pkg/cmd/server/kubernetes/master"
+	"github.com/openshift/origin/pkg/image/apiserver/registryhostname"
+	imageinformer "github.com/openshift/origin/pkg/image/generated/informers/internalversion"
+	imageclient "github.com/openshift/origin/pkg/image/generated/internalclientset"
+	projectcache "github.com/openshift/origin/pkg/project/cache"
+	"github.com/openshift/origin/pkg/quota/controller/clusterquotamapping"
+	quotainformer "github.com/openshift/origin/pkg/quota/generated/informers/internalversion"
+	"github.com/openshift/origin/pkg/quota/image"
+	securityinformer "github.com/openshift/origin/pkg/security/generated/informers/internalversion"
 )
 
 type InformerAccess interface {
-	GetInternalKubeInformers() kinternalinformers.SharedInformerFactory
-	GetExternalKubeInformers() kexternalinformers.SharedInformerFactory
-	GetImageInformers() imageinformer.SharedInformerFactory
-	GetQuotaInformers() quotainformer.SharedInformerFactory
-	GetSecurityInformers() securityinformer.SharedInformerFactory
-	GetUserInformers() userinformer.SharedInformerFactory
+	GetInternalKubernetesInformers() kinternalinformers.SharedInformerFactory
+	GetKubernetesInformers() kexternalinformers.SharedInformerFactory
+	GetInternalOpenshiftImageInformers() imageinformer.SharedInformerFactory
+	GetInternalOpenshiftQuotaInformers() quotainformer.SharedInformerFactory
+	GetInternalOpenshiftSecurityInformers() securityinformer.SharedInformerFactory
+	GetOpenshiftUserInformers() userinformer.SharedInformerFactory
 }
 
 func NewPluginInitializer(
@@ -65,15 +58,7 @@ func NewPluginInitializer(
 	if err != nil {
 		return nil, err
 	}
-	kubeClientGoClientSet, err := kubeclientgoclient.NewForConfig(privilegedLoopbackConfig)
-	if err != nil {
-		return nil, err
-	}
-	authorizationClient, err := authorizationclient.NewForConfig(privilegedLoopbackConfig)
-	if err != nil {
-		return nil, err
-	}
-	buildClient, err := buildclient.NewForConfig(privilegedLoopbackConfig)
+	kubeClient, err := kubeclientgoclient.NewForConfig(privilegedLoopbackConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -81,34 +66,20 @@ func NewPluginInitializer(
 	if err != nil {
 		return nil, err
 	}
-	quotaClient, err := quotaclient.NewForConfig(privilegedLoopbackConfig)
-	if err != nil {
-		return nil, err
-	}
-	templateClient, err := templateclient.NewForConfig(privilegedLoopbackConfig)
-	if err != nil {
-		return nil, err
-	}
-	userClient, err := userclient.NewForConfig(privilegedLoopbackConfig)
-	if err != nil {
-		return nil, err
-	}
 
 	// TODO make a union registry
 	quotaRegistry := generic.NewRegistry(install.NewQuotaConfigurationForAdmission().Evaluators())
 	imageEvaluators := image.NewReplenishmentEvaluatorsForAdmission(
-		informers.GetImageInformers().Image().InternalVersion().ImageStreams(),
+		informers.GetInternalOpenshiftImageInformers().Image().InternalVersion().ImageStreams(),
 		imageClient.Image(),
 	)
 	for i := range imageEvaluators {
 		quotaRegistry.Add(imageEvaluators[i])
 	}
 
-	defaultRegistry := env("OPENSHIFT_DEFAULT_REGISTRY", "${DOCKER_REGISTRY_SERVICE_HOST}:${DOCKER_REGISTRY_SERVICE_PORT}")
-	svcCache := service.NewServiceResolverCache(kubeInternalClient.Core().Services(metav1.NamespaceDefault).Get)
-	defaultRegistryFunc, err := svcCache.Defer(defaultRegistry)
+	registryHostnameRetriever, err := registryhostname.DefaultRegistryHostnameRetriever(privilegedLoopbackConfig, options.ImagePolicyConfig.ExternalRegistryHostname, options.ImagePolicyConfig.InternalRegistryHostname)
 	if err != nil {
-		return nil, fmt.Errorf("OPENSHIFT_DEFAULT_REGISTRY variable is invalid %q: %v", defaultRegistry, err)
+		return nil, err
 	}
 
 	// punch through layers to build this in order to get a string for a cloud provider file
@@ -128,14 +99,14 @@ func NewPluginInitializer(
 	}
 	// note: we are passing a combined quota registry here...
 	genericInitializer := initializer.New(
-		kubeClientGoClientSet,
-		informers.GetExternalKubeInformers(),
+		kubeClient,
+		informers.GetKubernetesInformers(),
 		authorizer,
 		legacyscheme.Scheme,
 	)
 	kubePluginInitializer := kadmission.NewPluginInitializer(
 		kubeInternalClient,
-		informers.GetInternalKubeInformers(),
+		informers.GetInternalKubernetesInformers(),
 		cloudConfig,
 		restMapper,
 		generic.NewConfiguration(quotaRegistry.List(), map[schema.GroupResource]struct{}{}))
@@ -159,37 +130,20 @@ func NewPluginInitializer(
 
 	webhookInitializer := webhookinitializer.NewPluginInitializer(
 		webhookAuthResolverWrapper,
-		aggregatorapiserver.NewClusterIPServiceResolver(informers.GetExternalKubeInformers().Core().V1().Services().Lister()),
+		aggregatorapiserver.NewClusterIPServiceResolver(informers.GetKubernetesInformers().Core().V1().Services().Lister()),
 	)
 
 	openshiftPluginInitializer := &oadmission.PluginInitializer{
-		OpenshiftInternalAuthorizationClient: authorizationClient,
-		OpenshiftInternalBuildClient:         buildClient,
-		OpenshiftInternalImageClient:         imageClient,
-		OpenshiftInternalQuotaClient:         quotaClient,
-		OpenshiftInternalTemplateClient:      templateClient,
-		OpenshiftInternalUserClient:          userClient,
-		ProjectCache:                         projectCache,
-		OriginQuotaRegistry:                  quotaRegistry,
-		Authorizer:                           authorizer,
-		JenkinsPipelineConfig:                options.JenkinsPipelineConfig,
-		RESTClientConfig:                     *privilegedLoopbackConfig,
-		Informers:                            informers.GetInternalKubeInformers(),
-		ClusterResourceQuotaInformer:         informers.GetQuotaInformers().Quota().InternalVersion().ClusterResourceQuotas(),
-		ClusterQuotaMapper:                   clusterQuotaMappingController.GetClusterQuotaMapper(),
-		RegistryHostnameRetriever:            imageapi.DefaultRegistryHostnameRetriever(defaultRegistryFunc, options.ImagePolicyConfig.ExternalRegistryHostname, options.ImagePolicyConfig.InternalRegistryHostname),
-		SecurityInformers:                    informers.GetSecurityInformers(),
-		UserInformers:                        informers.GetUserInformers(),
+		ProjectCache:                 projectCache,
+		OriginQuotaRegistry:          quotaRegistry,
+		JenkinsPipelineConfig:        options.JenkinsPipelineConfig,
+		RESTClientConfig:             *privilegedLoopbackConfig,
+		ClusterResourceQuotaInformer: informers.GetInternalOpenshiftQuotaInformers().Quota().InternalVersion().ClusterResourceQuotas(),
+		ClusterQuotaMapper:           clusterQuotaMappingController.GetClusterQuotaMapper(),
+		RegistryHostnameRetriever:    registryHostnameRetriever,
+		SecurityInformers:            informers.GetInternalOpenshiftSecurityInformers(),
+		UserInformers:                informers.GetOpenshiftUserInformers(),
 	}
 
 	return admission.PluginInitializers{genericInitializer, webhookInitializer, kubePluginInitializer, openshiftPluginInitializer}, nil
-}
-
-// env returns an environment variable, or the defaultValue if it is not set.
-func env(key string, defaultValue string) string {
-	val := os.Getenv(key)
-	if len(val) == 0 {
-		return defaultValue
-	}
-	return val
 }

@@ -24343,6 +24343,10 @@
        "$ref": "v1.ClusterNetworkEntry"
       },
       "description": "ClusterNetworks is a list of ClusterNetwork objects that defines the global overlay network's L3 space by specifying a set of CIDR and netmasks that the SDN can allocate addressed from."
+     },
+     "vxlanPort": {
+      "type": "integer",
+      "description": "VXLANPort sets the VXLAN destination port used by the cluster. It is set by the master configuration file on startup and cannot be edited manually. Valid values for VXLANPort are integers 1-65535 inclusive and if unset defaults to 4789. Changing VXLANPort allows users to resolve issues between openshift SDN and other software trying to use the same VXLAN destination port."
      }
     }
    },
@@ -26355,7 +26359,7 @@
      },
      "mountPropagation": {
       "$ref": "v1.MountPropagationMode",
-      "description": "mountPropagation determines how mounts are propagated from the host to container and the other way around. When not set, MountPropagationHostToContainer is used. This field is beta in 1.10."
+      "description": "mountPropagation determines how mounts are propagated from the host to container and the other way around. When not set, MountPropagationNone is used. This field is beta in 1.10."
      }
     }
    },
@@ -27528,7 +27532,14 @@
       "items": {
        "type": "string"
       },
-      "description": "EgressIPs is the list of automatic egress IP addresses currently hosted by this node"
+      "description": "EgressIPs is the list of automatic egress IP addresses currently hosted by this node. If EgressCIDRs is empty, this can be set by hand; if EgressCIDRs is set then the master will overwrite the value here with its own allocation of egress IPs."
+     },
+     "egressCIDRs": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "EgressCIDRs is the list of CIDR ranges available for automatically assigning egress IPs to this node from. If this field is set then EgressIPs should be treated as read-only."
      }
     }
    },

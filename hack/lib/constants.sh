@@ -28,7 +28,7 @@ readonly OS_OUTPUT_BINPATH="${OS_OUTPUT}/bin"
 readonly OS_OUTPUT_PKGDIR="${OS_OUTPUT}/pkgdir"
 
 readonly OS_SDN_COMPILE_TARGETS_LINUX=(
-  pkg/network/sdn-cni-plugin
+  cmd/sdn-cni-plugin
   vendor/github.com/containernetworking/plugins/plugins/ipam/host-local
   vendor/github.com/containernetworking/plugins/plugins/main/loopback
 )
@@ -56,11 +56,6 @@ readonly OS_TEST_TARGETS=(
 )
 
 readonly OS_GOVET_BLACKLIST=(
-	"pkg/.*/generated/internalclientset/fake/clientset_generated.go:[0-9]+: literal copies lock value from fakePtr: github.com/openshift/origin/vendor/k8s.io/client-go/testing.Fake"
-	"pkg/.*/generated/clientset/fake/clientset_generated.go:[0-9]+: literal copies lock value from fakePtr: github.com/openshift/origin/vendor/k8s.io/client-go/testing.Fake"
-	"pkg/build/vendor/github.com/docker/docker/client/hijack.go:[0-9]+: assignment copies lock value to c: crypto/tls.Config contains sync.Once contains sync.Mutex"
-	"pkg/build/builder/vendor/.*"
-	"pkg/cmd/server/start/.*"
 )
 
 #If you update this list, be sure to get the images/origin/Dockerfile
@@ -179,7 +174,7 @@ function os::util::list_go_src_files() {
 readonly -f os::util::list_go_src_files
 
 # os::util::list_go_src_dirs lists dirs in origin/ and cmd/ dirs excluding
-# doc.go, useful for tools that iterate over source to provide vetting or 
+# doc.go, useful for tools that iterate over source to provide vetting or
 # linting, or for godep-save etc.
 #
 # Globals:
@@ -189,8 +184,7 @@ readonly -f os::util::list_go_src_files
 # Returns:
 #  None
 function os::util::list_go_src_dirs() {
-	os::util::list_go_src_files | cut -d '/' -f 1-2 | grep -v ".go$" | grep -v "^./cmd" | LC_ALL=C sort -u
-	os::util::list_go_src_files | grep "^./cmd/"| cut -d '/' -f 1-3 | grep -v ".go$" | LC_ALL=C sort -u
+    go list -e ./... | grep -Ev "/(third_party|vendor|staging|clientset_generated)/" | LC_ALL=C sort -u
 }
 readonly -f os::util::list_go_src_dirs
 
@@ -335,21 +329,41 @@ readonly OS_ALL_IMAGES=(
 # os::build::check_binaries ensures that binary sizes do not grow without approval.
 function os::build::check_binaries() {
   platform=$(os::build::host_platform)
+  if [[ "${platform}" != "linux/amd64" && "${platform}" != "darwin/amd64" ]]; then
+    return 0
+  fi
+  duexe="du"
+
+  # In OSX, the 'du' binary does not provide the --apparent-size flag. However, the homebrew
+  # provide GNU coreutils which provide 'gdu' binary which is equivalent to Linux du.
+  # For now, if the 'gdu' binary is not installed, print annoying warning and don't check the
+  # binary size (the CI will capture possible violation anyway).
+  if [[ "${platform}" == "darwin/amd64" ]]; then
+    duexe=$(which gdu || true)
+    if [[ -z "${duexe}" ]]; then
+        os::log::warning "Unable to locate 'gdu' binary to determine size of the binary. Please install it using: 'brew install coreutils'"
+        return 0
+    fi
+  fi
+
   # enforce that certain binaries don't accidentally grow too large
   # IMPORTANT: contact Clayton or another master team member before altering this code
   if [[ -f "${OS_OUTPUT_BINPATH}/${platform}/oc" ]]; then
-    if [[ "$(du -m "${OS_OUTPUT_BINPATH}/${platform}/oc" | cut -f 1)" -gt "115" ]]; then
-		  os::log::fatal "oc binary has grown substantially. You must have approval before bumping this limit."
+    size=$($duexe --apparent-size -m "${OS_OUTPUT_BINPATH}/${platform}/oc" | cut -f 1)
+    if [[ "${size}" -gt "118" ]]; then
+      os::log::fatal "oc binary has grown substantially to ${size}. You must have approval before bumping this limit."
     fi
   fi
   if [[ -f "${OS_OUTPUT_BINPATH}/${platform}/openshift-node-config" ]]; then
-    if [[ "$(du -m "${OS_OUTPUT_BINPATH}/${platform}/openshift-node-config" | cut -f 1)" -gt "22" ]]; then
-		  os::log::fatal "openshift-node-config binary has grown substantially. You must have approval before bumping this limit."
+    size=$($duexe --apparent-size -m "${OS_OUTPUT_BINPATH}/${platform}/openshift-node-config" | cut -f 1)
+    if [[ "${size}" -gt "32" ]]; then
+      os::log::fatal "openshift-node-config binary has grown substantially to ${size}. You must have approval before bumping this limit."
     fi
   fi
   if [[ -f "${OS_OUTPUT_BINPATH}/${platform}/pod" ]]; then
-    if [[ "$(du -m "${OS_OUTPUT_BINPATH}/${platform}/pod" | cut -f 1)" -gt "2" ]]; then
-		  os::log::fatal "pod binary has grown substantially. You must have approval before bumping this limit."
+    size=$($duexe --apparent-size -m "${OS_OUTPUT_BINPATH}/${platform}/pod" | cut -f 1)
+    if [[ "${size}" -gt "2" ]]; then
+      os::log::fatal "pod binary has grown substantially to ${size}. You must have approval before bumping this limit."
     fi
   fi
 }

@@ -27,8 +27,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/kubernetes/pkg/cloudprovider"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/openstack"
+	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/util/keymutex"
 	"k8s.io/kubernetes/pkg/util/mount"
 	kstrings "k8s.io/kubernetes/pkg/util/strings"
@@ -51,7 +53,7 @@ type BlockStorageProvider interface {
 	AttachDisk(instanceID, volumeID string) (string, error)
 	DetachDisk(instanceID, volumeID string) error
 	DeleteVolume(volumeID string) error
-	CreateVolume(name string, size int, vtype, availability string, tags *map[string]string) (string, string, bool, error)
+	CreateVolume(name string, size int, vtype, availability string, tags *map[string]string) (string, string, string, bool, error)
 	GetDevicePath(volumeID string) string
 	InstanceID() (string, error)
 	GetAttachmentDiskPath(instanceID, volumeID string) (string, error)
@@ -505,10 +507,6 @@ func (c *cinderVolumeProvisioner) Provision(selectedNode *v1.Node, allowedTopolo
 		return nil, fmt.Errorf("invalid AccessModes %v: only AccessModes %v are supported", c.options.PVC.Spec.AccessModes, c.plugin.GetAccessModes())
 	}
 
-	if util.CheckPersistentVolumeClaimModeBlock(c.options.PVC) {
-		return nil, fmt.Errorf("%s does not support block volume provisioning", c.plugin.GetPluginName())
-	}
-
 	volumeID, sizeGB, labels, fstype, err := c.manager.CreateVolume(c)
 	if err != nil {
 		return nil, err
@@ -540,6 +538,10 @@ func (c *cinderVolumeProvisioner) Provision(selectedNode *v1.Node, allowedTopolo
 	}
 	if len(c.options.PVC.Spec.AccessModes) == 0 {
 		pv.Spec.AccessModes = c.plugin.GetAccessModes()
+	}
+
+	if utilfeature.DefaultFeatureGate.Enabled(features.BlockVolume) {
+		pv.Spec.VolumeMode = c.options.PVC.Spec.VolumeMode
 	}
 
 	return pv, nil

@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -28,9 +29,13 @@ import (
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/authorization/internalversion"
 	rbacclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/rbac/internalversion"
 
+	oapps "github.com/openshift/api/apps"
+	"github.com/openshift/api/build"
+	"github.com/openshift/api/image"
+	"github.com/openshift/api/oauth"
+	appsclient "github.com/openshift/client-go/apps/clientset/versioned"
+	projectv1client "github.com/openshift/client-go/project/clientset/versioned/typed/project/v1"
 	"github.com/openshift/origin/pkg/api/legacy"
-	oappsapi "github.com/openshift/origin/pkg/apps/apis/apps"
-	appsclient "github.com/openshift/origin/pkg/apps/generated/internalclientset"
 	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
 	authorizationclient "github.com/openshift/origin/pkg/authorization/generated/internalclientset"
 	authorizationclientscheme "github.com/openshift/origin/pkg/authorization/generated/internalclientset/scheme"
@@ -38,9 +43,7 @@ import (
 	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	buildclient "github.com/openshift/origin/pkg/build/generated/internalclientset"
 	"github.com/openshift/origin/pkg/cmd/server/bootstrappolicy"
-	imageapi "github.com/openshift/origin/pkg/image/apis/image"
-	oauthapi "github.com/openshift/origin/pkg/oauth/apis/oauth"
-	policy "github.com/openshift/origin/pkg/oc/admin/policy"
+	policy "github.com/openshift/origin/pkg/oc/cli/admin/policy"
 	projectclient "github.com/openshift/origin/pkg/project/generated/internalclientset"
 	testutil "github.com/openshift/origin/test/util"
 	testserver "github.com/openshift/origin/test/util/server"
@@ -135,20 +138,20 @@ func TestClusterReaderCoverage(t *testing.T) {
 	}
 
 	escalatingResources := map[schema.GroupResource]bool{
-		oauthapi.Resource("oauthauthorizetokens"):     true,
-		oauthapi.Resource("oauthaccesstokens"):        true,
-		oauthapi.Resource("oauthclients"):             true,
-		imageapi.Resource("imagestreams/secrets"):     true,
-		kapi.Resource("secrets"):                      true,
-		kapi.Resource("pods/exec"):                    true,
-		kapi.Resource("pods/proxy"):                   true,
-		kapi.Resource("pods/portforward"):             true,
-		kapi.Resource("nodes/proxy"):                  true,
-		kapi.Resource("services/proxy"):               true,
-		{Group: "", Resource: "oauthauthorizetokens"}: true,
-		{Group: "", Resource: "oauthaccesstokens"}:    true,
-		{Group: "", Resource: "oauthclients"}:         true,
-		{Group: "", Resource: "imagestreams/secrets"}: true,
+		oauth.Resource("oauthauthorizetokens"):  true,
+		oauth.Resource("oauthaccesstokens"):     true,
+		oauth.Resource("oauthclients"):          true,
+		image.Resource("imagestreams/secrets"):  true,
+		kapi.Resource("secrets"):                true,
+		kapi.Resource("pods/exec"):              true,
+		kapi.Resource("pods/proxy"):             true,
+		kapi.Resource("pods/portforward"):       true,
+		kapi.Resource("nodes/proxy"):            true,
+		kapi.Resource("services/proxy"):         true,
+		legacy.Resource("oauthauthorizetokens"): true,
+		legacy.Resource("oauthaccesstokens"):    true,
+		legacy.Resource("oauthclients"):         true,
+		legacy.Resource("imagestreams/secrets"): true,
 	}
 
 	readerRole, err := rbacclient.NewForConfigOrDie(clusterAdminClientConfig).ClusterRoles().Get(bootstrappolicy.ClusterReaderRoleName, metav1.GetOptions{})
@@ -174,15 +177,15 @@ func TestClusterReaderCoverage(t *testing.T) {
 
 	// remove resources without read APIs
 	nonreadingResources := []schema.GroupResource{
-		buildapi.Resource("buildconfigs/instantiatebinary"),
-		buildapi.Resource("buildconfigs/instantiate"),
-		buildapi.Resource("builds/clone"),
-		oappsapi.Resource("deploymentconfigrollbacks"),
-		oappsapi.Resource("generatedeploymentconfigs"),
-		oappsapi.Resource("deploymentconfigs/rollback"),
-		oappsapi.Resource("deploymentconfigs/instantiate"),
-		imageapi.Resource("imagestreamimports"),
-		imageapi.Resource("imagestreammappings"),
+		oapps.Resource("deploymentconfigrollbacks"),
+		oapps.Resource("generatedeploymentconfigs"),
+		oapps.Resource("deploymentconfigs/rollback"),
+		oapps.Resource("deploymentconfigs/instantiate"),
+		build.Resource("buildconfigs/instantiatebinary"),
+		build.Resource("buildconfigs/instantiate"),
+		build.Resource("builds/clone"),
+		image.Resource("imagestreamimports"),
+		image.Resource("imagestreammappings"),
 		extensionsapi.Resource("deployments/rollback"),
 		appsapi.Resource("deployments/rollback"),
 		kapi.Resource("pods/attach"),
@@ -251,15 +254,15 @@ func TestAuthorizationRestrictedAccessForProjectAdmins(t *testing.T) {
 	}
 
 	// wait for the project authorization cache to catch the change.  It is on a one second period
-	waitForProject(t, projectclient.NewForConfigOrDie(haroldConfig), "hammer-project", 1*time.Second, 10)
-	waitForProject(t, projectclient.NewForConfigOrDie(markConfig), "mallet-project", 1*time.Second, 10)
+	waitForProject(t, projectv1client.NewForConfigOrDie(haroldConfig), "hammer-project", 1*time.Second, 10)
+	waitForProject(t, projectv1client.NewForConfigOrDie(markConfig), "mallet-project", 1*time.Second, 10)
 }
 
 // waitForProject will execute a client list of projects looking for the project with specified name
 // if not found, it will retry up to numRetries at the specified delayInterval
-func waitForProject(t *testing.T, client projectclient.Interface, projectName string, delayInterval time.Duration, numRetries int) {
+func waitForProject(t *testing.T, client projectv1client.ProjectV1Interface, projectName string, delayInterval time.Duration, numRetries int) {
 	for i := 0; i <= numRetries; i++ {
-		projects, err := client.Project().Projects().List(metav1.ListOptions{})
+		projects, err := client.Projects().List(metav1.ListOptions{})
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -873,7 +876,7 @@ func TestAuthorizationSubjectAccessReviewAPIGroup(t *testing.T) {
 		kubeAuthInterface: clusterAdminSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   true,
-			Reason:    "allowed by openshift authorizer",
+			Reason:    `RBAC: allowed by RoleBinding "admin/hammer-project" of ClusterRole "admin" to User "harold"`,
 			Namespace: "hammer-project",
 		},
 	}.run(t)
@@ -887,7 +890,7 @@ func TestAuthorizationSubjectAccessReviewAPIGroup(t *testing.T) {
 		kubeAuthInterface: clusterAdminSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   false,
-			Reason:    `User "harold" cannot get horizontalpodautoscalers in project "hammer-project"`,
+			Reason:    `no RBAC policy matched`,
 			Namespace: "hammer-project",
 		},
 	}.run(t)
@@ -901,7 +904,7 @@ func TestAuthorizationSubjectAccessReviewAPIGroup(t *testing.T) {
 		kubeAuthInterface: clusterAdminKubeClient.Authorization(),
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   false,
-			Reason:    `User "harold" cannot get horizontalpodautoscalers.foo in project "hammer-project"`,
+			Reason:    `no RBAC policy matched`,
 			Namespace: "hammer-project",
 		},
 	}.run(t)
@@ -915,7 +918,7 @@ func TestAuthorizationSubjectAccessReviewAPIGroup(t *testing.T) {
 		kubeAuthInterface: clusterAdminSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   false,
-			Reason:    `User "harold" cannot get horizontalpodautoscalers.* in project "hammer-project"`,
+			Reason:    `no RBAC policy matched`,
 			Namespace: "hammer-project",
 		},
 	}.run(t)
@@ -1066,7 +1069,7 @@ func TestAuthorizationSubjectAccessReview(t *testing.T) {
 		kubeAuthInterface: clusterAdminLocalSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   true,
-			Reason:    "allowed by openshift authorizer",
+			Reason:    `RBAC: allowed by RoleBinding "view/default" of ClusterRole "view" to User "danny"`,
 			Namespace: "default",
 		},
 	}.run(t)
@@ -1077,7 +1080,7 @@ func TestAuthorizationSubjectAccessReview(t *testing.T) {
 		kubeAuthInterface: clusterAdminLocalSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   false,
-			Reason:    `User "danny" cannot get projects at the cluster scope`,
+			Reason:    `no RBAC policy matched`,
 			Namespace: "",
 		},
 	}.run(t)
@@ -1131,7 +1134,7 @@ func TestAuthorizationSubjectAccessReview(t *testing.T) {
 		kubeAuthInterface: haroldSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   true,
-			Reason:    "allowed by openshift authorizer",
+			Reason:    `RBAC: allowed by RoleBinding "view/hammer-project" of ClusterRole "view" to User "valerie"`,
 			Namespace: "hammer-project",
 		},
 	}.run(t)
@@ -1142,7 +1145,7 @@ func TestAuthorizationSubjectAccessReview(t *testing.T) {
 		kubeAuthInterface: markSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   false,
-			Reason:    `User "valerie" cannot get project "mallet-project"`,
+			Reason:    `no RBAC policy matched`,
 			Namespace: "mallet-project",
 		},
 	}.run(t)
@@ -1158,7 +1161,7 @@ func TestAuthorizationSubjectAccessReview(t *testing.T) {
 		kubeAuthInterface: markSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   true,
-			Reason:    "allowed by openshift authorizer",
+			Reason:    `RBAC: allowed by RoleBinding "edit/mallet-project" of ClusterRole "edit" to User "edgar"`,
 			Namespace: "mallet-project",
 		},
 	}.run(t)
@@ -1212,7 +1215,7 @@ func TestAuthorizationSubjectAccessReview(t *testing.T) {
 		kubeAuthInterface: haroldSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   true,
-			Reason:    "allowed by openshift authorizer",
+			Reason:    `RBAC: allowed by RoleBinding "admin/hammer-project" of ClusterRole "admin" to User "harold"`,
 			Namespace: "hammer-project",
 		},
 	}.run(t)
@@ -1228,7 +1231,7 @@ func TestAuthorizationSubjectAccessReview(t *testing.T) {
 		kubeAuthInterface: clusterAdminLocalSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   true,
-			Reason:    "allowed by cluster rule",
+			Reason:    `RBAC: allowed by ClusterRoleBinding "cluster-admins" of ClusterRole "cluster-admin" to Group "system:cluster-admins"`,
 			Namespace: "",
 		},
 	}.run(t)
@@ -1251,7 +1254,7 @@ func TestAuthorizationSubjectAccessReview(t *testing.T) {
 		kubeAuthInterface: haroldSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   true,
-			Reason:    "allowed by openshift authorizer",
+			Reason:    `RBAC: allowed by RoleBinding "admin/hammer-project" of ClusterRole "admin" to User "harold"`,
 			Namespace: "hammer-project",
 		},
 	}.run(t)
@@ -1262,7 +1265,7 @@ func TestAuthorizationSubjectAccessReview(t *testing.T) {
 		kubeAuthInterface: anonymousSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   true,
-			Reason:    "allowed by openshift authorizer",
+			Reason:    `RBAC: allowed by RoleBinding "edit/hammer-project" of ClusterRole "edit" to User "system:anonymous"`,
 			Namespace: "hammer-project",
 		},
 	}.run(t)
@@ -1275,7 +1278,7 @@ func TestAuthorizationSubjectAccessReview(t *testing.T) {
 		kubeAuthInterface: haroldSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   false,
-			Reason:    `User "harold" cannot create pods in project "mallet-project"`,
+			Reason:    `no RBAC policy matched`,
 			Namespace: "mallet-project",
 		},
 	}.run(t)
@@ -1286,7 +1289,7 @@ func TestAuthorizationSubjectAccessReview(t *testing.T) {
 		kubeAuthInterface: anonymousSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   false,
-			Reason:    `User "system:anonymous" cannot create pods in project "mallet-project"`,
+			Reason:    `no RBAC policy matched`,
 			Namespace: "mallet-project",
 		},
 	}.run(t)
@@ -1300,7 +1303,7 @@ func TestAuthorizationSubjectAccessReview(t *testing.T) {
 		kubeAuthInterface: haroldSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   false,
-			Reason:    `User "harold" cannot create pods in project "nonexistent-project"`,
+			Reason:    `no RBAC policy matched`,
 			Namespace: "nonexistent-project",
 		},
 	}.run(t)
@@ -1311,7 +1314,7 @@ func TestAuthorizationSubjectAccessReview(t *testing.T) {
 		kubeAuthInterface: anonymousSARGetter,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   false,
-			Reason:    `User "system:anonymous" cannot create pods in project "nonexistent-project"`,
+			Reason:    `no RBAC policy matched`,
 			Namespace: "nonexistent-project",
 		},
 	}.run(t)
@@ -1326,7 +1329,7 @@ func TestAuthorizationSubjectAccessReview(t *testing.T) {
 		localReview:       askCanICreatePolicyBindings,
 		response: authorizationapi.SubjectAccessReviewResponse{
 			Allowed:   false,
-			Reason:    `User "harold" cannot create policybindings in project "hammer-project"`,
+			Reason:    `no RBAC policy matched`,
 			Namespace: "hammer-project",
 		},
 	}.run(t)
@@ -1366,8 +1369,8 @@ func TestBrowserSafeAuthorizer(t *testing.T) {
 		if errProxy == nil {
 			return false
 		}
-		return strings.Contains(errProxy.Error(), `cannot "unsafeproxy" "pods" with name "podX1:8080" in project "ns"`) ||
-			strings.Contains(errProxy.Error(), `cannot get pods/unsafeproxy in project "ns"`)
+		return strings.Contains(errProxy.Error(), `cannot proxy pods in the namespace "ns": proxy verb changed to unsafeproxy`) ||
+			strings.Contains(errProxy.Error(), `cannot get pods/proxy in the namespace "ns": proxy subresource changed to unsafeproxy`)
 	}
 
 	for _, tc := range []struct {
@@ -1438,7 +1441,7 @@ func TestLegacyLocalRoleBindingEndpoint(t *testing.T) {
 	testBindingName := "testrole"
 
 	// install the legacy types into the client for decoding
-	legacy.InstallLegacyAuthorization(authorizationclientscheme.Scheme)
+	legacy.InstallInternalLegacyAuthorization(authorizationclientscheme.Scheme)
 
 	// create rolebinding
 	roleBindingToCreate := &authorizationapi.RoleBinding{
@@ -1607,7 +1610,7 @@ func TestLegacyClusterRoleBindingEndpoint(t *testing.T) {
 	clusterAdmin := authorizationclient.NewForConfigOrDie(clusterAdminClientConfig)
 
 	// install the legacy types into the client for decoding
-	legacy.InstallLegacyAuthorization(authorizationclientscheme.Scheme)
+	legacy.InstallInternalLegacyAuthorization(authorizationclientscheme.Scheme)
 
 	clusterRoleBindingsPath := "/oapi/v1/clusterrolebindings"
 	testBindingName := "testbinding"
@@ -1745,7 +1748,7 @@ func TestLegacyClusterRoleEndpoint(t *testing.T) {
 	clusterAdmin := authorizationclient.NewForConfigOrDie(clusterAdminClientConfig)
 
 	// install the legacy types into the client for decoding
-	legacy.InstallLegacyAuthorization(authorizationclientscheme.Scheme)
+	legacy.InstallInternalLegacyAuthorization(authorizationclientscheme.Scheme)
 
 	clusterRolesPath := "/oapi/v1/clusterroles"
 	testRole := "testrole"
@@ -1866,7 +1869,7 @@ func TestLegacyLocalRoleEndpoint(t *testing.T) {
 	}
 
 	// install the legacy types into the client for decoding
-	legacy.InstallLegacyAuthorization(authorizationclientscheme.Scheme)
+	legacy.InstallInternalLegacyAuthorization(authorizationclientscheme.Scheme)
 
 	rolesPath := "/oapi/v1/namespaces/" + namespace + "/roles"
 	testRole := "testrole"
@@ -1968,5 +1971,61 @@ func TestLegacyLocalRoleEndpoint(t *testing.T) {
 		t.Errorf("expected error")
 	} else if !kapierror.IsNotFound(err) {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestOldLocalAccessReviewEndpoints(t *testing.T) {
+	masterConfig, clusterAdminKubeConfig, err := testserver.StartTestMasterAPI()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer testserver.CleanupMasterEtcd(t, masterConfig)
+
+	clusterAdminClientConfig, err := testutil.GetClusterAdminClientConfig(clusterAdminKubeConfig)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	clusterAdminAuthorizationClient := authorizationclient.NewForConfigOrDie(clusterAdminClientConfig).Authorization()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	namespace := "hammer-project"
+	if _, _, err := testserver.CreateNewProject(clusterAdminClientConfig, namespace, "harold"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// install the legacy types into the client for decoding
+	legacy.InstallInternalLegacyAuthorization(authorizationclientscheme.Scheme)
+	codecFactory := serializer.NewCodecFactory(authorizationclientscheme.Scheme)
+
+	sar := &authorizationapi.SubjectAccessReview{
+		Action: authorizationapi.Action{
+			Verb:     "get",
+			Resource: "imagestreams/layers",
+		},
+	}
+	sarBytes, err := runtime.Encode(codecFactory.LegacyCodec(schema.GroupVersion{Version: "v1"}), sar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = clusterAdminAuthorizationClient.RESTClient().Post().AbsPath("/oapi/v1/namespaces/" + namespace + "/subjectaccessreviews").Body(sarBytes).Do().Into(&authorizationapi.SubjectAccessReviewResponse{})
+	if !kapierror.IsNotFound(err) {
+		t.Fatal(err)
+	}
+
+	rar := &authorizationapi.ResourceAccessReview{
+		Action: authorizationapi.Action{
+			Verb:     "get",
+			Resource: "imagestreams/layers",
+		},
+	}
+	rarBytes, err := runtime.Encode(codecFactory.LegacyCodec(schema.GroupVersion{Version: "v1"}), rar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = clusterAdminAuthorizationClient.RESTClient().Post().AbsPath("/oapi/v1/namespaces/" + namespace + "/resourceaccessreviews").Body(rarBytes).Do().Into(&authorizationapi.ResourceAccessReviewResponse{})
+	if !kapierror.IsNotFound(err) {
+		t.Fatal(err)
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -25,7 +24,8 @@ import (
 	oauthutil "github.com/openshift/origin/pkg/oauth/util"
 	routeplugin "github.com/openshift/origin/pkg/route/allocation/simple"
 	routeallocationcontroller "github.com/openshift/origin/pkg/route/controller/allocation"
-	sccstorage "github.com/openshift/origin/pkg/security/registry/securitycontextconstraints/etcd"
+	sccstorage "github.com/openshift/origin/pkg/security/apiserver/registry/securitycontextconstraints/etcd"
+	"k8s.io/apimachinery/pkg/util/wait"
 	kapiserveroptions "k8s.io/kubernetes/cmd/kube-apiserver/app/options"
 )
 
@@ -46,6 +46,16 @@ func (c *MasterConfig) newOpenshiftAPIConfig(kubeAPIServerConfig apiserver.Confi
 	// TODO try to stop special casing these.  We should all agree on them.
 	genericConfig.RESTOptionsGetter = c.RESTOptionsGetter
 
+	var caData []byte
+	if len(c.Options.ImagePolicyConfig.AdditionalTrustedCA) != 0 {
+		glog.V(2).Infof("Image import using additional CA path: %s", c.Options.ImagePolicyConfig.AdditionalTrustedCA)
+		var err error
+		caData, err = ioutil.ReadFile(c.Options.ImagePolicyConfig.AdditionalTrustedCA)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA bundle %s for image importing: %v", c.Options.ImagePolicyConfig.AdditionalTrustedCA, err)
+		}
+	}
+
 	ret := &OpenshiftAPIConfig{
 		GenericConfig: &apiserver.RecommendedConfig{Config: genericConfig},
 		ExtraConfig: OpenshiftAPIExtraConfig{
@@ -61,6 +71,7 @@ func (c *MasterConfig) newOpenshiftAPIConfig(kubeAPIServerConfig apiserver.Confi
 			RegistryHostnameRetriever:          c.RegistryHostnameRetriever,
 			AllowedRegistriesForImport:         c.Options.ImagePolicyConfig.AllowedRegistriesForImport,
 			MaxImagesBulkImportedPerRepository: c.Options.ImagePolicyConfig.MaxImagesBulkImportedPerRepository,
+			AdditionalTrustedCA:                caData,
 			RouteAllocator:                     c.RouteAllocator(),
 			ProjectAuthorizationCache:          c.ProjectAuthorizationCache,
 			ProjectCache:                       c.ProjectCache,
@@ -269,7 +280,8 @@ func (c *MasterConfig) Run(stopCh <-chan struct{}) error {
 	// add post-start hooks
 	aggregatedAPIServer.GenericAPIServer.AddPostStartHookOrDie("authorization.openshift.io-bootstrapclusterroles", bootstrapData(bootstrappolicy.Policy()).EnsureRBACPolicy())
 	aggregatedAPIServer.GenericAPIServer.AddPostStartHookOrDie("authorization.openshift.io-ensureopenshift-infra", ensureOpenShiftInfraNamespace)
-	aggregatedAPIServer.GenericAPIServer.AddPostStartHookOrDie("quota.openshift.io-clusterquotamapping", c.startClusterQuotaMapping)
+	c.AddPostStartHooks(aggregatedAPIServer.GenericAPIServer)
+
 	for name, fn := range c.additionalPostStartHooks {
 		aggregatedAPIServer.GenericAPIServer.AddPostStartHookOrDie(name, fn)
 	}
@@ -327,7 +339,8 @@ func (c *MasterConfig) RunKubeAPIServer(stopCh <-chan struct{}) error {
 
 	aggregatedAPIServer.GenericAPIServer.AddPostStartHookOrDie("authorization.openshift.io-bootstrapclusterroles", bootstrapData(bootstrappolicy.Policy()).EnsureRBACPolicy())
 	aggregatedAPIServer.GenericAPIServer.AddPostStartHookOrDie("authorization.openshift.io-ensureopenshift-infra", ensureOpenShiftInfraNamespace)
-	aggregatedAPIServer.GenericAPIServer.AddPostStartHookOrDie("quota.openshift.io-clusterquotamapping", c.startClusterQuotaMapping)
+	c.AddPostStartHooks(aggregatedAPIServer.GenericAPIServer)
+
 	// add post-start hooks
 	for name, fn := range c.additionalPostStartHooks {
 		aggregatedAPIServer.GenericAPIServer.AddPostStartHookOrDie(name, fn)
@@ -366,7 +379,7 @@ func (c *MasterConfig) RunOpenShift(stopCh <-chan struct{}) error {
 	}
 
 	// add post-start hooks
-	openshiftAPIServer.AddPostStartHookOrDie("quota.openshift.io-clusterquotamapping", c.startClusterQuotaMapping)
+	c.AddPostStartHooks(openshiftAPIServer)
 	for name, fn := range c.additionalPostStartHooks {
 		openshiftAPIServer.AddPostStartHookOrDie(name, fn)
 	}
@@ -448,15 +461,6 @@ func (c *MasterConfig) RouteAllocator() *routeallocationcontroller.RouteAllocati
 	return factory.Create(plugin)
 }
 
-// env returns an environment variable, or the defaultValue if it is not set.
-func env(key string, defaultValue string) string {
-	val := os.Getenv(key)
-	if len(val) == 0 {
-		return defaultValue
-	}
-	return val
-}
-
 func WithPatternPrefixHandler(handler http.Handler, patternHandler http.Handler, prefixes ...string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		for _, p := range prefixes {
@@ -469,8 +473,23 @@ func WithPatternPrefixHandler(handler http.Handler, patternHandler http.Handler,
 	})
 }
 
+func (c *MasterConfig) AddPostStartHooks(server *apiserver.GenericAPIServer) {
+	server.AddPostStartHookOrDie("quota.openshift.io-clusterquotamapping", c.startClusterQuotaMapping)
+	server.AddPostStartHookOrDie("openshift.io-RESTMapper", c.startRESTMapper)
+}
+
 func (c *MasterConfig) startClusterQuotaMapping(context apiserver.PostStartHookContext) error {
 	go c.ClusterQuotaMappingController.Run(5, context.StopCh)
+	return nil
+}
+
+func (c *MasterConfig) startRESTMapper(context apiserver.PostStartHookContext) error {
+	c.RESTMapper.Reset()
+	go func() {
+		wait.Until(func() {
+			c.RESTMapper.Reset()
+		}, 10*time.Second, context.StopCh)
+	}()
 	return nil
 }
 
